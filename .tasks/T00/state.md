@@ -1,2 +1,2 @@
 phase: implementing
-blocked: waiting for the Japanese VPS 50-cycle run (docs/VPS.md section 3)
+waiting: human ticks GO or NO-GO in docs/SPIKE.md section 6
