@@ -90,6 +90,7 @@ của Mercari có thể đổi. Nếu về sau bị 403, thử ConoHa trước k
 
 ☒ **GO** — lấy được item mới, đúng thứ tự thời gian, ổn định qua 50 chu kỳ, từ
 IP của VPS Nhật sẽ dùng thật.
+Ngoại lệ: thứ tự thời gian không đạt, chấp nhận vì dedup theo item ID trên cả trang (xem Ghi chú).
 
 ☐ **NO-GO** — chuyển phương án dự phòng, cộng thêm ____ ngày.
 
