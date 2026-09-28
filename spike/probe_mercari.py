@@ -42,6 +42,7 @@ class ProbedListing:
     created_at: datetime
     url: str
     thumbnail_url: str | None
+    thumbnail_count: int
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,7 @@ def parse_listing(raw_item: Mapping[str, object]) -> ProbedListing:
     try:
         item_id = str(raw_item["id"])
         thumbnails = raw_item.get("thumbnails")
+        thumbnail_count = len(thumbnails) if isinstance(thumbnails, list) else 0
         first_thumbnail = (
             str(thumbnails[0]) if isinstance(thumbnails, list) and thumbnails else None
         )
@@ -139,6 +141,7 @@ def parse_listing(raw_item: Mapping[str, object]) -> ProbedListing:
             created_at=datetime.fromtimestamp(int(str(raw_item["created"])), tz=UTC),
             url=build_item_page_url(item_id, raw_item.get("itemType")),
             thumbnail_url=first_thumbnail,
+            thumbnail_count=thumbnail_count,
         )
     except (KeyError, ValueError, TypeError) as missing_or_malformed_field:
         raise ProbeParseError(repr(missing_or_malformed_field)) from missing_or_malformed_field
@@ -279,7 +282,7 @@ def report_first_page(
     print(
         f"detail {detail_candidate.item_id}: status={detail_outcome.status_code} "
         f"error={detail_outcome.error_kind} distinct photos={len(photo_urls)} "
-        f"search thumbnails={int(detail_candidate.thumbnail_url is not None)}"
+        f"search thumbnails={detail_candidate.thumbnail_count}"
     )
 
 
