@@ -65,7 +65,7 @@ Keyword thật sẽ nằm giữa hai cực này. Đo lại khi có danh sách ke
 | Kết quả trộn Mercari (`m...`) và Shops (`2J...`) | Mọi chu kỳ (25/30 là Shops) | Mapper đọc `itemType` để dựng URL; detail ảnh cần đường riêng cho Shops |
 | Search chỉ có 1 ảnh | Mọi item | Gọi detail khi có item mới để lấy 1–4 ảnh |
 | `transport_error` sau khi máy sleep | 1/50, chỉ local | Backoff của `RetryingListingSource` là đủ |
-| Item cũ bị đẩy lên đầu (sửa giá, sửa tin) | Thường gặp với keyword rộng, ví dụ `m80493943894` tạo 09-21 đứng thứ 3 | Id chưa từng thấy nên dedup theo id sẽ alert như item mới. **Cần con người quyết định**: có muốn alert loại này không. Nếu không, lọc thêm theo `created` so với thời điểm baseline của rule (T17) |
+| Item cũ bị đẩy lên đầu (sửa giá, sửa tin) | Thường gặp với keyword rộng, ví dụ `m80493943894` tạo 09-21 đứng thứ 3 | Id chưa từng thấy nên dedup theo id sẽ alert như item mới. **Đã quyết định (2026-09-28): chỉ alert item thật sự mới.** T17 bỏ qua item có `created` sớm hơn thời điểm baseline của rule, nhưng vẫn ghi id vào bảng dedup |
 | Keyword khớp lỏng, cả mô tả | `OMEGA` trả cả đồ Kamen Rider Amazon Omega, thức ăn thú cưng, dầu dưỡng tóc | Không lọc trong code (ngoài scope). Người dùng đặt keyword cụ thể hơn |
 | Ước lượng item/ngày từ spread `created` sai | Mọi keyword có item cũ bị đẩy lên | Không dùng spread `created` để tính tốc độ; đếm id mới giữa các chu kỳ |
 
@@ -102,5 +102,6 @@ Ghi chú: Agent đề xuất **GO có điều kiện**, con người quyết đ�
   Với keyword hẹp (~35 kết quả) thì không xảy ra; keyword rộng cần đo lại.
 - "Lấy được item mới": **đạt**. Với `OMEGA`, item đứng đầu đổi 7 lần trong 30
   phút; một item có mặt trong search chưa tới 2,5 phút sau khi đăng.
-- Còn mở cho con người: có alert item cũ bị đẩy lên đầu (sửa giá, sửa tin) hay
-  không. Quyết định này ảnh hưởng T17.
+- Item cũ bị đẩy lên đầu (sửa giá, sửa tin): con người chọn **không alert**.
+  Chỉ item có `created` sau thời điểm baseline của rule mới được alert. Ràng
+  buộc này thuộc T17 `NewListingDetectionService`.
