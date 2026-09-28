@@ -88,7 +88,7 @@ của Mercari có thể đổi. Nếu về sau bị 403, thử ConoHa trước k
 
 ## 6. Đi tiếp hay dừng
 
-☐ **GO** — lấy được item mới, đúng thứ tự thời gian, ổn định qua 50 chu kỳ, từ
+☒ **GO** — lấy được item mới, đúng thứ tự thời gian, ổn định qua 50 chu kỳ, từ
 IP của VPS Nhật sẽ dùng thật.
 
 ☐ **NO-GO** — chuyển phương án dự phòng, cộng thêm ____ ngày.
