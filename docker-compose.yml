@@ -1,0 +1,21 @@
+services:
+  alert-bot:
+    build: .
+    image: mercari-alert-bot:latest
+    container_name: mercari-alert-bot
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - listings-data:/data
+      - ./config/keywords.yaml:/config/keywords.yaml:ro
+      - ./backups:/backups
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  listings-data:

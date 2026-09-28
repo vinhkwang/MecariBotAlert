@@ -1,0 +1,51 @@
+polling:
+  gap_seconds_between_rules: 18
+  page_size: 30
+  detail_fetch_enabled: true
+  max_images_per_alert: 4
+
+health:
+  consecutive_failures_before_alert: 3
+  alert_cooldown_minutes: 30
+  treat_global_zero_results_as_failure: true
+
+keywords:
+  - name: Omega 168.005
+    query: OMEGA 168.005
+    enabled: true
+
+  - name: Omega Constellation
+    query: OMEGA Constellation
+    enabled: true
+
+  - name: Omega Seamaster
+    query: OMEGA シーマスター
+    enabled: true
+
+  - name: Omega Speedmaster
+    query: OMEGA スピードマスター
+    enabled: true
+
+  - name: Longines Conquest
+    query: LONGINES コンクエスト
+    enabled: true
+
+  - name: Longines Flagship
+    query: LONGINES フラッグシップ
+    enabled: true
+
+  - name: Seiko King
+    query: セイコー キングセイコー
+    enabled: true
+
+  - name: Seiko Grand
+    query: セイコー グランドセイコー
+    enabled: true
+
+  - name: Seiko Lord Marvel
+    query: セイコー ロードマーベル
+    enabled: true
+
+  - name: Vintage watch lot
+    query: アンティーク 腕時計 手巻き
+    enabled: false

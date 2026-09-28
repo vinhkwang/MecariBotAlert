@@ -1,0 +1,12 @@
+polling:
+  gap_seconds_between_rules: 18
+  page_size: 30
+  detail_fetch_enabled: true
+  max_images_per_alert: 4
+
+health:
+  consecutive_failures_before_alert: 3
+  alert_cooldown_minutes: 30
+  treat_global_zero_results_as_failure: true
+
+keywords: []
