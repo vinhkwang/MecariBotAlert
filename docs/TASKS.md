@@ -21,7 +21,7 @@ Không viết một dòng code sản phẩm nào cho tới khi T00 xong và ô G
 
 | ID | Branch | Việc | Phụ thuộc | Giờ | Trạng thái |
 |---|---|---|---|---|---|
-| T00 | `chore/spike` | Script dò Mercari, chạy local + VPS Nhật, điền SPIKE.md | — | 4–8 | todo |
+| T00 | `chore/spike` | Script dò Mercari, chạy local + VPS Nhật, điền SPIKE.md | — | 4–8 | review |
 
 ## Wave 1 — Nền móng, chạy một mình
 
