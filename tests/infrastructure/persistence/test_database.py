@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -123,3 +124,21 @@ async def test_transactions_are_serialized(database: SqliteDatabase) -> None:
     await asyncio.gather(first, second)
 
     assert events == ["first-entered", "first-exiting", "second-entered"]
+
+
+async def test_transaction_rolls_back_when_commit_fails(
+    database: SqliteDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def failing_commit() -> None:
+        raise sqlite3.OperationalError("disk full")
+
+    monkeypatch.setattr(database.connection, "commit", failing_commit)
+    with pytest.raises(sqlite3.OperationalError):
+        async with database.transaction() as connection:
+            await connection.execute(INSERT_RULE, (TIMESTAMP, TIMESTAMP))
+    monkeypatch.undo()
+
+    async with database.transaction():
+        pass
+
+    assert await count_rules(tmp_path / "alerts.db") == 0
