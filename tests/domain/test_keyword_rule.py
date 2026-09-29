@@ -17,6 +17,16 @@ def build_rule() -> KeywordRule:
     )
 
 
+def test_valid_rule_keeps_its_fields() -> None:
+    rule = build_rule()
+
+    assert rule.rule_id == 1
+    assert rule.name == "Omega Constellation"
+    assert rule.query == "OMEGA Constellation"
+    assert rule.is_enabled is True
+    assert rule.baseline_established_at is None
+
+
 def test_rule_without_baseline_has_no_baseline() -> None:
     assert build_rule().has_baseline is False
 

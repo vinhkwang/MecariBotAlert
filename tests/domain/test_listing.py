@@ -30,7 +30,9 @@ def test_valid_listing_keeps_its_fields() -> None:
     assert listing.title == "OMEGA Constellation"
     assert listing.price == JpyAmount(45000)
     assert listing.url == "https://jp.mercari.com/item/m22267384686"
-    assert len(listing.image_urls) == 1
+    assert listing.image_urls == (
+        "https://static.mercdn.net/item/detail/orig/photos/m22267384686_1.jpg",
+    )
     assert listing.created_at == CREATED_AT
 
 
