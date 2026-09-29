@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -147,14 +148,9 @@ async def test_item_under_two_rules_keeps_one_listing_and_both_matches(
 async def test_listing_fields_are_stored_in_utc_and_integer_yen(
     repository: SqliteListingRepository, database_path: Path
 ) -> None:
-    listing = build_listing("m1")
     listed_in_japan_time = datetime(2026, 9, 29, 12, 0, tzinfo=JAPAN_STANDARD_TIME)
-    listing = Listing(
-        item_id=listing.item_id,
-        kind=listing.kind,
-        title=listing.title,
-        price=listing.price,
-        url=listing.url,
+    listing = replace(
+        build_listing("m1"),
         image_urls=("https://static.mercdn.net/a.jpg", "https://static.mercdn.net/b.jpg"),
         created_at=listed_in_japan_time,
     )
@@ -186,6 +182,21 @@ async def test_remember_with_no_listings_writes_nothing(
 
     assert await fetch_rows(database_path, "SELECT item_id FROM listings") == []
     assert await fetch_rows(database_path, "SELECT item_id FROM listing_rule_matches") == []
+
+
+async def test_rejected_batch_writes_no_rows(
+    repository: SqliteListingRepository, database_path: Path
+) -> None:
+    await repository.remember_listings([build_listing("m1")], RULE_ID, SEEN_AT)
+
+    with pytest.raises(InvalidDomainValueError):
+        await repository.remember_listings(
+            [build_listing("m2"), build_listing("m1")], RULE_ID, NAIVE_MOMENT
+        )
+
+    assert await fetch_rows(database_path, "SELECT item_id FROM listings ORDER BY item_id") == [
+        ("m1",)
+    ]
 
 
 async def test_marking_notified_keeps_first_time(
@@ -226,7 +237,7 @@ async def test_naive_notified_at_is_rejected_and_nothing_is_written(
 
 
 async def test_known_ids_of_deleted_rule_are_kept(
-    repository: SqliteListingRepository, database: SqliteDatabase
+    repository: SqliteListingRepository, database: SqliteDatabase, database_path: Path
 ) -> None:
     async with database.transaction() as connection:
         await connection.execute(
@@ -239,3 +250,6 @@ async def test_known_ids_of_deleted_rule_are_kept(
         await connection.execute("DELETE FROM keyword_rules WHERE rule_id = 1")
 
     assert await repository.find_known_item_ids([ItemId("m1")]) == frozenset({ItemId("m1")})
+    assert await fetch_rows(database_path, "SELECT item_id, rule_id FROM listing_rule_matches") == [
+        ("m1", 1)
+    ]
