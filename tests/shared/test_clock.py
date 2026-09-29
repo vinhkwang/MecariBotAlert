@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -23,5 +24,10 @@ def test_frozen_clock_advances_by_elapsed_time() -> None:
 
 
 def test_frozen_clock_rejects_naive_datetime() -> None:
-    with pytest.raises(ValueError, match="timezone-aware"):
+    with pytest.raises(ValueError, match="UTC datetime"):
         FrozenClock(datetime(2026, 1, 1))
+
+
+def test_frozen_clock_rejects_non_utc_datetime() -> None:
+    with pytest.raises(ValueError, match="UTC datetime"):
+        FrozenClock(datetime(2026, 1, 1, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")))
