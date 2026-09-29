@@ -1,0 +1,16 @@
+from collections.abc import Sequence
+from typing import Protocol
+
+from mercari_alert_bot.domain.models.keyword_rule import KeywordRule, KeywordRuleId
+
+
+class KeywordRuleRepository(Protocol):
+    async def list_rules(self) -> Sequence[KeywordRule]: ...
+
+    async def get_rule(self, rule_id: KeywordRuleId) -> KeywordRule: ...
+
+    async def add_rule(self, name: str, query: str, *, is_enabled: bool = True) -> KeywordRule: ...
+
+    async def save_rule(self, rule: KeywordRule) -> None: ...
+
+    async def delete_rule(self, rule_id: KeywordRuleId) -> None: ...
