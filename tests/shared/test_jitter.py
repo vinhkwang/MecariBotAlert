@@ -24,9 +24,10 @@ def test_same_seed_gives_same_delay() -> None:
     assert first_delay == second_delay
 
 
-def test_negative_base_delay_is_rejected() -> None:
+@pytest.mark.parametrize("base_delay_seconds", [-1.0, float("nan"), float("inf")])
+def test_invalid_base_delay_is_rejected(base_delay_seconds: float) -> None:
     with pytest.raises(ValueError, match="base_delay_seconds"):
-        apply_jitter(-1.0, 0.25, random.Random(1))
+        apply_jitter(base_delay_seconds, 0.25, random.Random(1))
 
 
 @pytest.mark.parametrize("jitter_ratio", [-0.1, 1.1])
