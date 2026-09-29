@@ -10,7 +10,11 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
 class EnvSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", frozen=True
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_ignore_empty=True,
+        extra="ignore",
+        frozen=True,
     )
 
     telegram_bot_token: SecretStr = Field(min_length=1)

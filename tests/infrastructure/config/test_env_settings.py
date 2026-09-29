@@ -153,5 +153,17 @@ def test_env_example_lists_every_setting() -> None:
     assignments = read_env_example_assignments()
 
     assert set(assignments) == {name.upper() for name in EnvSettings.model_fields}
-    assert assignments["TELEGRAM_BOT_TOKEN"] == ""
-    assert assignments["TELEGRAM_CHAT_ID"] == ""
+    assert all(value == "" for value in assignments.values())
+
+
+@pytest.mark.usefixtures("telegram_credentials")
+def test_empty_optional_variables_fall_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ["WEB_HOST", "WEB_PORT", "DATABASE_PATH", "POLLING_GAP_SECONDS"]:
+        monkeypatch.setenv(name, "")
+
+    settings = build_settings()
+
+    assert settings.web_host == "127.0.0.1"
+    assert settings.web_port == 8080
+    assert settings.database_path == Path("data/mercari_alert_bot.sqlite3")
+    assert settings.polling_gap_seconds == 60
