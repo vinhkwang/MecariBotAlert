@@ -5,6 +5,8 @@ from pydantic import ValidationError
 
 from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
 
+ENV_EXAMPLE_PATH = Path(__file__).resolve().parents[3] / ".env.example"
+
 BOT_TOKEN = "123456:secret-bot-token"
 CHAT_ID = "-1009876543210"
 
@@ -136,3 +138,20 @@ def test_settings_are_immutable() -> None:
 
     with pytest.raises(ValidationError):
         settings.web_port = 9999
+
+
+def read_env_example_assignments() -> dict[str, str]:
+    assignments: dict[str, str] = {}
+    for line in ENV_EXAMPLE_PATH.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            name, _, value = line.partition("=")
+            assignments[name.strip()] = value.strip()
+    return assignments
+
+
+def test_env_example_lists_every_setting() -> None:
+    assignments = read_env_example_assignments()
+
+    assert set(assignments) == {name.upper() for name in EnvSettings.model_fields}
+    assert assignments["TELEGRAM_BOT_TOKEN"] == ""
+    assert assignments["TELEGRAM_CHAT_ID"] == ""
