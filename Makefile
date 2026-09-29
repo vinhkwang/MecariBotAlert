@@ -20,7 +20,8 @@ test:
 	pytest -q
 
 cov:
-	pytest --cov=src/mercari_alert_bot --cov-report=term-missing
+	pytest --cov=src/mercari_alert_bot --cov-report=term-missing --cov-fail-under=75
+	coverage report --include='src/mercari_alert_bot/domain/*,src/mercari_alert_bot/application/*' --fail-under=90
 
 gates: lint type test
 
