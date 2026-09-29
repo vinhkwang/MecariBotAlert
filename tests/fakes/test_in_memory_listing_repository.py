@@ -34,6 +34,7 @@ async def test_remembered_item_is_known() -> None:
     known = await repository.find_known_item_ids([ItemId("m1"), ItemId("m2")])
 
     assert known == frozenset({ItemId("m1")})
+    assert repository.first_seen_at_by_item_id == {ItemId("m1"): SEEN_AT}
 
 
 async def test_remembering_twice_keeps_one_attribution() -> None:

@@ -27,6 +27,7 @@ async def test_added_rule_has_no_baseline() -> None:
 
     assert rule.baseline_established_at is None
     assert rule.is_enabled
+    assert rule.rule_id == 1
 
 
 async def test_added_rules_get_increasing_ids_after_seeded_rules() -> None:
