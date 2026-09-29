@@ -1,10 +1,12 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from mercari_alert_bot.domain.models.keyword_rule import KeywordRule, KeywordRuleId
 from mercari_alert_bot.infrastructure.persistence.keyword_rule_yaml import (
     KeywordSeedFormatError,
+    export_keyword_rules_yaml,
     import_seed_rules_when_empty,
 )
 from tests.fakes.in_memory_keyword_rule_repository import InMemoryKeywordRuleRepository
@@ -135,3 +137,49 @@ async def test_import_validates_whole_file_before_adding_any_rule(tmp_path: Path
         await import_seed_rules_when_empty(repository, seed_path)
 
     assert await repository.list_rules() == []
+
+
+async def add_sample_rules(repository: InMemoryKeywordRuleRepository) -> None:
+    await repository.add_rule("first", "alpha")
+    await repository.add_rule("second", "beta", is_enabled=False)
+
+
+async def test_export_writes_every_rule_in_order() -> None:
+    repository = InMemoryKeywordRuleRepository()
+    await add_sample_rules(repository)
+
+    exported = yaml.safe_load(await export_keyword_rules_yaml(repository))
+
+    assert exported == {
+        "keywords": [
+            {"name": "first", "query": "alpha", "enabled": True},
+            {"name": "second", "query": "beta", "enabled": False},
+        ]
+    }
+
+
+async def test_export_of_empty_repository_is_empty_keyword_list() -> None:
+    exported = yaml.safe_load(await export_keyword_rules_yaml(InMemoryKeywordRuleRepository()))
+
+    assert exported == {"keywords": []}
+
+
+async def test_export_keeps_japanese_text_unescaped() -> None:
+    repository = InMemoryKeywordRuleRepository()
+    await repository.add_rule("カメラ", "フィルムカメラ")
+
+    exported_text = await export_keyword_rules_yaml(repository)
+
+    assert "フィルムカメラ" in exported_text
+
+
+async def test_export_then_import_round_trips(tmp_path: Path) -> None:
+    source_repository = InMemoryKeywordRuleRepository()
+    await add_sample_rules(source_repository)
+    await source_repository.add_rule("カメラ", "フィルムカメラ")
+    seed_path = write_seed(tmp_path, await export_keyword_rules_yaml(source_repository))
+    target_repository = InMemoryKeywordRuleRepository()
+
+    await import_seed_rules_when_empty(target_repository, seed_path)
+
+    assert await read_triples(target_repository) == await read_triples(source_repository)

@@ -66,3 +66,13 @@ def _parse_seed_entry(index: int, raw_entry: object) -> SeedEntry:
     if not isinstance(is_enabled, bool):
         raise KeywordSeedFormatError(f"keyword entry {index} enabled must be true or false")
     return SeedEntry(name=name, query=query, is_enabled=is_enabled)
+
+
+async def export_keyword_rules_yaml(repository: KeywordRuleRepository) -> str:
+    rules = await repository.list_rules()
+    document = {
+        "keywords": [
+            {"name": rule.name, "query": rule.query, "enabled": rule.is_enabled} for rule in rules
+        ]
+    }
+    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
