@@ -197,6 +197,29 @@ async def test_request_is_logged_without_secrets(client: TelegramClient) -> None
     assert "private message text" not in rendered_event
 
 
+async def test_transport_failure_is_logged_without_secrets(client: TelegramClient) -> None:
+    with respx.mock, structlog.testing.capture_logs() as captured_logs:
+        respx.post(endpoint("sendMessage")).mock(side_effect=httpx.ConnectTimeout("timed out"))
+        with pytest.raises(TelegramTransportError):
+            await client.send_message("private message text")
+    assert len(captured_logs) == 1
+    event = captured_logs[0]
+    assert event["event"] == "telegram_request"
+    assert event["failure_kind"] == "ConnectTimeout"
+    rendered_event = json.dumps(event, default=str)
+    assert BOT_TOKEN not in rendered_event
+    assert CHAT_ID not in rendered_event
+    assert "private message text" not in rendered_event
+
+
+async def test_error_without_description_is_described(client: TelegramClient) -> None:
+    with respx.mock:
+        respx.post(endpoint("sendMessage")).respond(400, json={"ok": False})
+        with pytest.raises(TelegramApiError) as raised:
+            await client.send_message("hello")
+    assert raised.value.description == "no description"
+
+
 async def test_every_method_is_attempted_exactly_once_on_failure(
     client: TelegramClient,
 ) -> None:
