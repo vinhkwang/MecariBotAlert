@@ -82,25 +82,23 @@ class TelegramClient:
             self._log_request(method_name, started_at, failure_kind=failure_kind)
             raise TelegramTransportError(method_name, failure_kind) from None
         self._log_request(method_name, started_at, status_code=response.status_code)
-        raise_for_failed_response(method_name, response)
+        _raise_for_failed_response(method_name, response)
 
     def _log_request(
         self,
         method_name: str,
         started_at: float,
-        status_code: int | None = None,
-        failure_kind: str | None = None,
+        **request_outcome: int | str,
     ) -> None:
         logger.bind(method_name=method_name).info(
             "telegram_request",
-            status_code=status_code,
-            failure_kind=failure_kind,
+            **request_outcome,
             duration_ms=round((time.perf_counter() - started_at) * MILLISECONDS_PER_SECOND),
         )
 
 
-def raise_for_failed_response(method_name: str, response: httpx.Response) -> None:
-    parsed_body = parse_json_object(response)
+def _raise_for_failed_response(method_name: str, response: httpx.Response) -> None:
+    parsed_body = _parse_json_object(response)
     if response.status_code == HTTPStatus.OK and parsed_body.get("ok") is True:
         return
     description = parsed_body.get("description")
@@ -109,12 +107,12 @@ def raise_for_failed_response(method_name: str, response: httpx.Response) -> Non
         status_code=response.status_code,
         description=description
         if isinstance(description, str)
-        else describe_missing_body(parsed_body),
-        retry_after_seconds=read_retry_after_seconds(parsed_body),
+        else _describe_missing_body(parsed_body),
+        retry_after_seconds=_read_retry_after_seconds(parsed_body),
     )
 
 
-def parse_json_object(response: httpx.Response) -> Mapping[str, Any]:
+def _parse_json_object(response: httpx.Response) -> Mapping[str, Any]:
     try:
         parsed = response.json()
     except ValueError:
@@ -122,11 +120,11 @@ def parse_json_object(response: httpx.Response) -> Mapping[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def describe_missing_body(parsed_body: Mapping[str, Any]) -> str:
+def _describe_missing_body(parsed_body: Mapping[str, Any]) -> str:
     return "no description" if parsed_body else NON_JSON_RESPONSE_DESCRIPTION
 
 
-def read_retry_after_seconds(parsed_body: Mapping[str, Any]) -> int | None:
+def _read_retry_after_seconds(parsed_body: Mapping[str, Any]) -> int | None:
     parameters = parsed_body.get("parameters")
     if not isinstance(parameters, dict):
         return None
