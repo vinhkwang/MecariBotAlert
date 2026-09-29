@@ -10,26 +10,11 @@ ENV_EXAMPLE_PATH = Path(__file__).resolve().parents[3] / ".env.example"
 BOT_TOKEN = "123456:secret-bot-token"
 CHAT_ID = "-1009876543210"
 
-OPTIONAL_VARIABLE_NAMES = [
-    "DATABASE_PATH",
-    "KEYWORD_SEED_PATH",
-    "KEYWORD_RULE_SOURCE",
-    "WEB_HOST",
-    "WEB_PORT",
-    "LOG_LEVEL",
-    "POLLING_GAP_SECONDS",
-    "SEARCH_PAGE_SIZE",
-    "IS_ITEM_DETAIL_FETCH_ENABLED",
-    "MAX_IMAGES_PER_ALERT",
-    "CONSECUTIVE_FAILURE_ALERT_THRESHOLD",
-    "SYSTEM_ALERT_COOLDOWN_SECONDS",
-]
-
 
 @pytest.fixture(autouse=True)
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", *OPTIONAL_VARIABLE_NAMES]:
-        monkeypatch.delenv(name, raising=False)
+    for field_name in EnvSettings.model_fields:
+        monkeypatch.delenv(field_name.upper(), raising=False)
 
 
 @pytest.fixture
@@ -110,6 +95,9 @@ def test_optional_variables_override_defaults(monkeypatch: pytest.MonkeyPatch) -
         ("MAX_IMAGES_PER_ALERT", "11"),
         ("KEYWORD_RULE_SOURCE", "postgres"),
         ("LOG_LEVEL", "TRACE"),
+        ("SEARCH_PAGE_SIZE", "121"),
+        ("CONSECUTIVE_FAILURE_ALERT_THRESHOLD", "0"),
+        ("SYSTEM_ALERT_COOLDOWN_SECONDS", "-1"),
     ],
 )
 def test_out_of_range_values_are_rejected(
