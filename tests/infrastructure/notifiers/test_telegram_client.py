@@ -71,6 +71,17 @@ async def test_send_media_group_puts_caption_on_first_photo_only(
     }
 
 
+async def test_send_media_group_sends_at_most_ten_photos(client: TelegramClient) -> None:
+    photo_urls = [f"https://img.example/{index}.jpg" for index in range(12)]
+    with respx.mock:
+        route = respx.post(endpoint("sendMediaGroup")).respond(200, json=SUCCESS_BODY)
+        await client.send_media_group(photo_urls, "caption text")
+    media = sent_json(route)["media"]
+    assert [item["media"] for item in media] == photo_urls[:10]
+    assert media[0]["caption"] == "caption text"
+    assert all("caption" not in item for item in media[1:])
+
+
 async def test_api_error_exposes_status_and_description(client: TelegramClient) -> None:
     error_body = {
         "ok": False,

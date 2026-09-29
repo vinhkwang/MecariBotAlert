@@ -12,6 +12,7 @@ from mercari_alert_bot.domain.errors import NotificationDeliveryError
 TELEGRAM_API_BASE_URL: Final = "https://api.telegram.org"
 NON_JSON_RESPONSE_DESCRIPTION: Final = "non-json response"
 MILLISECONDS_PER_SECOND: Final = 1000
+MAX_MEDIA_GROUP_SIZE: Final = 10
 
 logger = structlog.get_logger()
 
@@ -63,7 +64,9 @@ class TelegramClient:
         await self._call("sendPhoto", {"photo": photo_url, "caption": caption})
 
     async def send_media_group(self, photo_urls: Sequence[str], caption: str) -> None:
-        media = [{"type": "photo", "media": photo_url} for photo_url in photo_urls]
+        media = [
+            {"type": "photo", "media": photo_url} for photo_url in photo_urls[:MAX_MEDIA_GROUP_SIZE]
+        ]
         if media:
             media[0]["caption"] = caption
         await self._call("sendMediaGroup", {"media": media})
