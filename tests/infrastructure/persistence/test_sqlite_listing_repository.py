@@ -187,16 +187,16 @@ async def test_remember_with_no_listings_writes_nothing(
 async def test_rejected_batch_writes_no_rows(
     repository: SqliteListingRepository, database_path: Path
 ) -> None:
-    await repository.remember_listings([build_listing("m1")], RULE_ID, SEEN_AT)
+    listing_with_naive_created_at = build_listing("m3")
+    object.__setattr__(listing_with_naive_created_at, "created_at", NAIVE_MOMENT)
 
     with pytest.raises(InvalidDomainValueError):
         await repository.remember_listings(
-            [build_listing("m2"), build_listing("m1")], RULE_ID, NAIVE_MOMENT
+            [build_listing("m2"), listing_with_naive_created_at], RULE_ID, SEEN_AT
         )
 
-    assert await fetch_rows(database_path, "SELECT item_id FROM listings ORDER BY item_id") == [
-        ("m1",)
-    ]
+    assert await fetch_rows(database_path, "SELECT item_id FROM listings") == []
+    assert await fetch_rows(database_path, "SELECT item_id FROM listing_rule_matches") == []
 
 
 async def test_marking_notified_keeps_first_time(
