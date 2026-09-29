@@ -22,3 +22,8 @@ spike/output/
 backups/
 *.log
 .DS_Store
+
+CLAUDE.md
+.claude/
+.tasks/
+docs/
