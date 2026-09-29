@@ -18,8 +18,8 @@ ALLOWED_COMMENT_PREFIXES: Final = ("# type: ignore[", "# noqa", "# pragma:")
 DOCSTRING_OWNER_TYPES: Final = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
-def iter_python_files(source_root: Path) -> Iterator[Path]:
-    return iter(sorted(source_root.rglob("*.py")))
+def iter_python_files(source_root: Path) -> list[Path]:
+    return sorted(source_root.rglob("*.py"))
 
 
 def describe_location(source_root: Path, file_path: Path, line_number: int) -> str:
@@ -47,9 +47,7 @@ def iter_imported_layers(tree: ast.Module) -> Iterator[tuple[int, str]]:
 def layer_of_module_path(line_number: int, module_path: str) -> Iterator[tuple[int, str]]:
     module_parts = module_path.split(".")
     if len(module_parts) > 1 and module_parts[0] == PACKAGE_NAME:
-        imported_part = module_parts[1]
-        if imported_part in ALLOWED_LAYER_IMPORTS:
-            yield line_number, imported_part
+        yield line_number, module_parts[1]
 
 
 def find_layer_violations(source_root: Path) -> list[str]:
@@ -144,6 +142,18 @@ def test_web_importing_infrastructure_is_reported(tmp_path: Path) -> None:
     )
 
     assert find_layer_violations(tmp_path) == ["web/routers/leak.py:1: web imports infrastructure"]
+
+
+def test_web_importing_composition_root_is_reported(tmp_path: Path) -> None:
+    write_source_file(
+        tmp_path,
+        "web/routers/leak.py",
+        "from mercari_alert_bot.composition_root import build_application\n",
+    )
+
+    assert find_layer_violations(tmp_path) == [
+        "web/routers/leak.py:1: web imports composition_root"
+    ]
 
 
 def test_composition_root_may_import_every_layer(tmp_path: Path) -> None:
