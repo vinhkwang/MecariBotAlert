@@ -64,3 +64,16 @@ def test_messages_below_configured_level_are_dropped(log_buffer: io.StringIO) ->
     structlog.get_logger().info("scan_cycle_completed")
 
     assert log_buffer.getvalue() == ""
+
+
+def test_exception_traceback_is_rendered_into_json(log_buffer: io.StringIO) -> None:
+    configure_logging(logging.INFO, log_buffer)
+
+    try:
+        raise ZeroDivisionError("boom")
+    except ZeroDivisionError:
+        structlog.get_logger().exception("scan_failed")
+
+    [log_line] = read_log_lines(log_buffer)
+    assert log_line["level"] == "error"
+    assert "ZeroDivisionError: boom" in log_line["exception"]
