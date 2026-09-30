@@ -9,6 +9,7 @@ import structlog
 from mercari_alert_bot.application.services.baseline_seeding_service import (
     BaselineSeedingService,
 )
+from mercari_alert_bot.application.services.health_monitor_service import RuleScanOutcome
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
 )
@@ -51,6 +52,7 @@ class ScanCycleReport:
     fetched_listing_count: int
     sent_alert_count: int
     failed_alert_count: int
+    rule_outcomes: tuple[RuleScanOutcome, ...]
 
 
 @dataclass(slots=True)
@@ -71,6 +73,7 @@ class _CycleTally:
     seeded_rule_names: list[str] = field(default_factory=list)
     failed_rule_names: list[str] = field(default_factory=list)
     matches_by_item_id: dict[ItemId, _MatchedListing] = field(default_factory=dict)
+    rule_outcomes: list[RuleScanOutcome] = field(default_factory=list)
     fetched_listing_count: int = 0
     sent_alert_count: int = 0
     failed_alert_count: int = 0
@@ -137,6 +140,7 @@ class ScanCycleService:
         except _ISOLATED_RULE_ERRORS as error:
             logger.warning("rule_scan_failed", error_type=type(error).__name__)
             tally.failed_rule_names.append(rule.name)
+            tally.rule_outcomes.append(_build_rule_outcome(rule, listing_count=0, has_failed=True))
 
     async def _seed_rule(self, rule: KeywordRule, tally: _CycleTally) -> None:
         seeded_rule = await self._baseline_seeding_service.seed_rule_baseline(rule)
@@ -146,6 +150,9 @@ class ScanCycleService:
     async def _detect_rule_listings(self, rule: KeywordRule, tally: _CycleTally) -> None:
         listings = await self._listing_source.fetch_latest_listings(rule.query)
         tally.fetched_listing_count += len(listings)
+        tally.rule_outcomes.append(
+            _build_rule_outcome(rule, listing_count=len(listings), has_failed=False)
+        )
         detected = await self._new_listing_detection_service.detect_new_listings(rule, listings)
         for listing in detected.fresh_listings:
             match = tally.matches_by_item_id.setdefault(listing.item_id, _MatchedListing(listing))
@@ -231,4 +238,16 @@ class ScanCycleService:
             fetched_listing_count=tally.fetched_listing_count,
             sent_alert_count=tally.sent_alert_count,
             failed_alert_count=tally.failed_alert_count,
+            rule_outcomes=tuple(tally.rule_outcomes),
         )
+
+
+def _build_rule_outcome(
+    rule: KeywordRule, *, listing_count: int, has_failed: bool
+) -> RuleScanOutcome:
+    return RuleScanOutcome(
+        rule_id=rule.rule_id,
+        rule_name=rule.name,
+        listing_count=listing_count,
+        has_failed=has_failed,
+    )
