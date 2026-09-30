@@ -21,7 +21,7 @@ class NewListingDetectionService:
         rule: KeywordRule,
         candidates: Sequence[Listing],
     ) -> DetectedListings:
-        distinct_candidates = collapse_duplicate_item_ids(candidates)
+        distinct_candidates = _collapse_duplicate_item_ids(candidates)
         known_item_ids = await self._listing_repository.find_known_item_ids(
             [listing.item_id for listing in distinct_candidates]
         )
@@ -31,7 +31,7 @@ class NewListingDetectionService:
         fresh_listings: list[Listing] = []
         stale_listings: list[Listing] = []
         for listing in unseen_listings:
-            if is_created_since_baseline(listing, rule):
+            if _is_created_since_baseline(listing, rule):
                 fresh_listings.append(listing)
             else:
                 stale_listings.append(listing)
@@ -41,14 +41,14 @@ class NewListingDetectionService:
         )
 
 
-def collapse_duplicate_item_ids(candidates: Sequence[Listing]) -> list[Listing]:
+def _collapse_duplicate_item_ids(candidates: Sequence[Listing]) -> list[Listing]:
     first_listing_by_item_id: dict[ItemId, Listing] = {}
     for listing in candidates:
         first_listing_by_item_id.setdefault(listing.item_id, listing)
     return list(first_listing_by_item_id.values())
 
 
-def is_created_since_baseline(listing: Listing, rule: KeywordRule) -> bool:
+def _is_created_since_baseline(listing: Listing, rule: KeywordRule) -> bool:
     if rule.baseline_established_at is None:
         return False
     return listing.created_at >= rule.baseline_established_at
