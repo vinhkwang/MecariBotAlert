@@ -287,12 +287,17 @@ async def test_non_ok_status_raises_http_status_error(
 @pytest.mark.parametrize("operation", OPERATIONS)
 @pytest.mark.parametrize(
     "transport_error",
-    [httpx.ConnectTimeout("t"), httpx.ReadTimeout("t"), httpx.ConnectError("t")],
+    [
+        httpx.ConnectTimeout("t"),
+        httpx.ReadTimeout("t"),
+        httpx.ConnectError("t"),
+        httpx.DecodingError("t"),
+    ],
     ids=lambda error: type(error).__name__,
 )
 @pytest.mark.asyncio
 async def test_transport_failure_raises_transport_error(
-    source: MercariHttpListingSource, operation: str, transport_error: httpx.TransportError
+    source: MercariHttpListingSource, operation: str, transport_error: httpx.RequestError
 ) -> None:
     with respx.mock() as router:
         mock_operation_route(router, operation).mock(side_effect=transport_error)

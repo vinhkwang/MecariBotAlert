@@ -137,7 +137,7 @@ class MercariHttpListingSource:
         started_at = time.perf_counter()
         try:
             response = await self._http_client.send(request)
-        except httpx.TransportError as error:
+        except httpx.RequestError as error:
             failure_kind = type(error).__name__
             self._log_request(operation, started_at, failure_kind=failure_kind)
             raise MercariTransportError(operation, failure_kind) from None
