@@ -184,11 +184,22 @@ async def test_server_error_is_retried_with_backoff(
     assert len(sleep.delays_seconds) == 1
 
 
-async def test_connect_error_is_retried(notifier: TelegramNotifier) -> None:
+@pytest.mark.parametrize(
+    "unsent_failure",
+    [
+        httpx.ConnectError("refused"),
+        httpx.ConnectTimeout("timed out"),
+        httpx.PoolTimeout("pool exhausted"),
+    ],
+)
+async def test_unsent_transport_failure_is_retried(
+    notifier: TelegramNotifier,
+    unsent_failure: httpx.TransportError,
+) -> None:
     with respx.mock:
         message_route = respx.post(endpoint("sendMessage"))
         message_route.side_effect = [
-            httpx.ConnectError("connection refused"),
+            unsent_failure,
             httpx.Response(200, json=SUCCESS_BODY),
         ]
         await notifier.send_listing_alert(listing_with_photo_count(0), [RULE])
@@ -210,13 +221,22 @@ async def test_retries_are_bounded_then_fall_back(
     assert len(sleep.delays_seconds) == MAX_ATTEMPTS - 1
 
 
-async def test_ambiguous_timeout_is_not_retried_nor_fallen_back(
+@pytest.mark.parametrize(
+    "ambiguous_failure",
+    [
+        httpx.ReadTimeout("read timed out"),
+        httpx.WriteTimeout("write timed out"),
+        httpx.RemoteProtocolError("peer closed"),
+    ],
+)
+async def test_ambiguous_transport_failure_is_not_retried_nor_fallen_back(
     notifier: TelegramNotifier,
     sleep: RecordingSleep,
+    ambiguous_failure: httpx.TransportError,
 ) -> None:
     with respx.mock:
         media_group_route = respx.post(endpoint("sendMediaGroup")).mock(
-            side_effect=httpx.ReadTimeout("read timed out")
+            side_effect=ambiguous_failure
         )
         photo_route = respx.post(endpoint("sendPhoto")).respond(200, json=SUCCESS_BODY)
         message_route = respx.post(endpoint("sendMessage")).respond(200, json=SUCCESS_BODY)
