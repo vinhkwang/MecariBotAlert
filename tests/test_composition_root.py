@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import structlog
 
@@ -25,7 +26,10 @@ from mercari_alert_bot.composition_root import (
     open_scanner,
 )
 from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
-from mercari_alert_bot.infrastructure.persistence.database import open_sqlite_database
+from mercari_alert_bot.infrastructure.persistence.database import (
+    SqliteDatabase,
+    open_sqlite_database,
+)
 from mercari_alert_bot.infrastructure.persistence.sqlite_keyword_rule_repository import (
     SqliteKeywordRuleRepository,
 )
@@ -135,14 +139,39 @@ async def test_scan_job_alerts_after_consecutive_failures_reach_threshold(
     assert harness.failure_alerts() == ["Keywords failing repeatedly:\n- omega: 2 scans in a row"]
 
 
-async def test_open_scanner_imports_seed_rules_and_closes_database(tmp_path: Path) -> None:
+async def test_open_scanner_imports_seed_rules_and_closes_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     settings = build_settings(tmp_path)
     settings.keyword_seed_path.write_text(
         "keywords:\n  - name: omega\n    query: omega 168.005\n", encoding="utf-8"
     )
+    captured_databases: list[SqliteDatabase] = []
+    captured_clients: list[httpx.AsyncClient] = []
+
+    async def open_and_capture_database(database_path: Path) -> SqliteDatabase:
+        database = await open_sqlite_database(database_path)
+        captured_databases.append(database)
+        return database
+
+    class CapturingAsyncClient(httpx.AsyncClient):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            captured_clients.append(self)
+
+    monkeypatch.setattr(
+        "mercari_alert_bot.composition_root.open_sqlite_database", open_and_capture_database
+    )
+    monkeypatch.setattr(
+        "mercari_alert_bot.composition_root.httpx.AsyncClient", CapturingAsyncClient
+    )
 
     async with open_scanner(settings) as scheduler:
         assert isinstance(scheduler, IntervalScheduler)
+
+    assert captured_clients[0].is_closed
+    with pytest.raises(ValueError, match="no active connection"):
+        await captured_databases[0].connection.execute("SELECT 1")
 
     database = await open_sqlite_database(settings.database_path)
     try:
