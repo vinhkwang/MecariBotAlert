@@ -53,12 +53,12 @@ from mercari_alert_bot.shared.logging import configure_logging
 
 SCHEDULER_JITTER_RATIO: Final = 0.2
 HTTP_TIMEOUT_SECONDS: Final = 20.0
-URL_LOGGING_LIBRARY_NAMES: Final = ("httpx", "httpcore")
+_URL_LOGGING_LIBRARY_NAMES: Final = ("httpx", "httpcore")
 
 
 def configure_process_logging(settings: EnvSettings) -> None:
     configure_logging(logging.getLevelNamesMapping()[settings.log_level], sys.stdout)
-    for library_name in URL_LOGGING_LIBRARY_NAMES:
+    for library_name in _URL_LOGGING_LIBRARY_NAMES:
         logging.getLogger(library_name).setLevel(logging.WARNING)
 
 
