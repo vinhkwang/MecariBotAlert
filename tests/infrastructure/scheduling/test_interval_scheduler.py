@@ -70,13 +70,16 @@ async def test_stop_during_wait_returns_promptly() -> None:
     job = JobProbe()
     scheduler = build_scheduler(job, interval_seconds=LONG_INTERVAL_SECONDS)
 
-    async with asyncio.timeout(GUARD_SECONDS):
-        run_task = asyncio.create_task(scheduler.run())
-        await job.first_call_started.wait()
-        scheduler.request_stop()
-        await run_task
+    with structlog.testing.capture_logs() as captured_logs:
+        async with asyncio.timeout(GUARD_SECONDS):
+            run_task = asyncio.create_task(scheduler.run())
+            await job.first_call_started.wait()
+            scheduler.request_stop()
+            await run_task
 
+    waiting_logs = [log for log in captured_logs if log["event"] == "scheduled_job_waiting"]
     assert job.call_count == 1
+    assert [log["delay_seconds"] for log in waiting_logs] == [LONG_INTERVAL_SECONDS]
 
 
 async def test_stop_during_job_lets_job_finish() -> None:
