@@ -28,12 +28,13 @@ class NewListingDetectionService:
         unseen_listings = [
             listing for listing in distinct_candidates if listing.item_id not in known_item_ids
         ]
-        fresh_listings = [
-            listing for listing in unseen_listings if is_created_since_baseline(listing, rule)
-        ]
-        stale_listings = [
-            listing for listing in unseen_listings if not is_created_since_baseline(listing, rule)
-        ]
+        fresh_listings: list[Listing] = []
+        stale_listings: list[Listing] = []
+        for listing in unseen_listings:
+            if is_created_since_baseline(listing, rule):
+                fresh_listings.append(listing)
+            else:
+                stale_listings.append(listing)
         return DetectedListings(
             fresh_listings=tuple(fresh_listings),
             stale_listings=tuple(stale_listings),
