@@ -118,7 +118,7 @@ class HealthMonitorService:
 
 
 def _rule_failure_key(outcome: RuleScanOutcome) -> str:
-    return f"rule_failure:{outcome.rule_id}"
+    return f"{_RULE_FAILURE_ALERT_KEY}:{outcome.rule_id}"
 
 
 def _is_zero_result_cycle(rule_outcomes: Sequence[RuleScanOutcome]) -> bool:
