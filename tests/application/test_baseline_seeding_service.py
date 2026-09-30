@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import structlog
 
 from mercari_alert_bot.application.services.baseline_seeding_service import (
     BaselineSeedingService,
@@ -42,10 +43,14 @@ class MutatingListingSource(InMemoryListingSource):
 
 
 class Harness:
-    def __init__(self, listing_source: InMemoryListingSource | None = None) -> None:
+    def __init__(
+        self,
+        listing_source: InMemoryListingSource | None = None,
+        rules: InMemoryKeywordRuleRepository | None = None,
+    ) -> None:
         self.source = listing_source or InMemoryListingSource()
         self.listings = InMemoryListingRepository()
-        self.rules = InMemoryKeywordRuleRepository()
+        self.rules = rules or InMemoryKeywordRuleRepository()
         self.clock = FrozenClock(START)
         self.service = BaselineSeedingService(self.source, self.listings, self.rules, self.clock)
 
@@ -144,8 +149,7 @@ async def test_query_edited_during_seed_does_not_set_baseline() -> None:
     async def edit_query() -> None:
         await rules.save_rule(replace(rule, query="new query"))
 
-    harness = Harness(MutatingListingSource(edit_query))
-    harness.service = BaselineSeedingService(harness.source, harness.listings, rules, harness.clock)
+    harness = Harness(MutatingListingSource(edit_query), rules=rules)
 
     returned_rule = await harness.service.seed_rule_baseline(rule)
 
@@ -162,8 +166,7 @@ async def test_name_edited_during_seed_is_preserved() -> None:
     async def edit_name() -> None:
         await rules.save_rule(replace(rule, name="renamed"))
 
-    harness = Harness(MutatingListingSource(edit_name))
-    harness.service = BaselineSeedingService(harness.source, harness.listings, rules, harness.clock)
+    harness = Harness(MutatingListingSource(edit_name), rules=rules)
 
     await harness.service.seed_rule_baseline(rule)
 
@@ -181,8 +184,7 @@ async def test_rule_deleted_during_seed_raises_not_found() -> None:
 
     source = MutatingListingSource(delete_rule)
     source.listings_by_query["omega query"] = [build_listing("m1")]
-    harness = Harness(source)
-    harness.service = BaselineSeedingService(source, harness.listings, rules, harness.clock)
+    harness = Harness(source, rules=rules)
 
     with pytest.raises(KeywordRuleNotFoundError):
         await harness.service.seed_rule_baseline(rule)
@@ -210,3 +212,21 @@ async def test_seeded_listings_are_reported_as_known() -> None:
 
     known_item_ids = await harness.listings.find_known_item_ids([ItemId("m1"), ItemId("m2")])
     assert known_item_ids == {ItemId("m1"), ItemId("m2")}
+
+
+async def test_seeding_logs_rule_name_and_seeded_item_count() -> None:
+    harness = Harness()
+    rule = await harness.rules.add_rule("omega", "omega query")
+    harness.source.listings_by_query["omega query"] = [build_listing("m1")]
+
+    with structlog.testing.capture_logs() as captured_logs:
+        await harness.service.seed_rule_baseline(rule)
+
+    assert captured_logs == [
+        {
+            "event": "rule_baseline_seeded",
+            "rule_name": "omega",
+            "seeded_item_count": 1,
+            "log_level": "info",
+        }
+    ]
