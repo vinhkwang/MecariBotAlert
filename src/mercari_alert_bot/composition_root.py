@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Final
 
 import httpx
+from fastapi import FastAPI
 
 from mercari_alert_bot.application.services.baseline_seeding_service import (
     BaselineSeedingService,
@@ -50,6 +51,7 @@ from mercari_alert_bot.infrastructure.sources.retrying_listing_source import (
 )
 from mercari_alert_bot.shared.clock import SystemClock
 from mercari_alert_bot.shared.logging import configure_logging
+from mercari_alert_bot.web.app import create_web_app
 
 SCHEDULER_JITTER_RATIO: Final = 0.2
 HTTP_TIMEOUT_SECONDS: Final = 20.0
@@ -136,3 +138,23 @@ async def open_scanner(settings: EnvSettings) -> AsyncIterator[IntervalScheduler
             jitter_ratio=SCHEDULER_JITTER_RATIO,
             rng=rng,
         )
+
+
+@asynccontextmanager
+async def run_scanner_in_background(settings: EnvSettings) -> AsyncIterator[None]:
+    async with open_scanner(settings) as scheduler:
+        scanner_task = asyncio.create_task(scheduler.run())
+        try:
+            yield
+        finally:
+            scheduler.request_stop()
+            await scanner_task
+
+
+def build_web_app(settings: EnvSettings) -> FastAPI:
+    @asynccontextmanager
+    async def scanner_lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        async with run_scanner_in_background(settings):
+            yield
+
+    return create_web_app(scanner_lifespan)

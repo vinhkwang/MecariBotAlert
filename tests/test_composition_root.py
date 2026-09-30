@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -7,6 +8,7 @@ from typing import Any
 import httpx
 import pytest
 import structlog
+from fastapi.testclient import TestClient
 
 from mercari_alert_bot.application.services.baseline_seeding_service import (
     BaselineSeedingService,
@@ -22,8 +24,10 @@ from mercari_alert_bot.application.services.scan_cycle_service import (
 from mercari_alert_bot.composition_root import (
     build_scan_cycle_options,
     build_scan_job,
+    build_web_app,
     configure_process_logging,
     open_scanner,
+    run_scanner_in_background,
 )
 from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
 from mercari_alert_bot.infrastructure.persistence.database import (
@@ -33,7 +37,10 @@ from mercari_alert_bot.infrastructure.persistence.database import (
 from mercari_alert_bot.infrastructure.persistence.sqlite_keyword_rule_repository import (
     SqliteKeywordRuleRepository,
 )
-from mercari_alert_bot.infrastructure.scheduling.interval_scheduler import IntervalScheduler
+from mercari_alert_bot.infrastructure.scheduling.interval_scheduler import (
+    IntervalScheduler,
+    ScheduledJob,
+)
 from mercari_alert_bot.shared.clock import SystemClock
 from tests.fakes.in_memory_keyword_rule_repository import InMemoryKeywordRuleRepository
 from tests.fakes.in_memory_listing_repository import InMemoryListingRepository
@@ -201,3 +208,41 @@ def test_configure_process_logging_silences_httpx_info(tmp_path: Path) -> None:
         logging.getLogger("httpx").setLevel(logging.NOTSET)
         logging.getLogger("httpcore").setLevel(logging.NOTSET)
         structlog.reset_defaults()
+
+
+async def test_background_scanner_stops_promptly_on_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = build_settings(tmp_path, polling_gap_seconds=3600)
+    first_cycle_finished = asyncio.Event()
+
+    def build_signalling_scan_job(*_args: Any) -> ScheduledJob:
+        async def signal_first_cycle() -> None:
+            first_cycle_finished.set()
+
+        return signal_first_cycle
+
+    monkeypatch.setattr(
+        "mercari_alert_bot.composition_root.build_scan_job", build_signalling_scan_job
+    )
+
+    async with asyncio.timeout(5):
+        async with run_scanner_in_background(settings):
+            await first_cycle_finished.wait()
+
+
+def test_build_web_app_starts_scanner_and_serves_index(tmp_path: Path) -> None:
+    settings = build_settings(tmp_path, polling_gap_seconds=3600)
+
+    with TestClient(build_web_app(settings)) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert settings.database_path.exists()
+
+
+def test_build_web_app_fails_startup_for_yaml_rule_source(tmp_path: Path) -> None:
+    settings = build_settings(tmp_path, keyword_rule_source="yaml")
+
+    with pytest.raises(ValueError, match="yaml"), TestClient(build_web_app(settings)):
+        pass
