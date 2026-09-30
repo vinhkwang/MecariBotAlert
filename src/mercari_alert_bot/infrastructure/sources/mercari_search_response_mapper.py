@@ -4,7 +4,7 @@ from typing import Final
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from mercari_alert_bot.domain.errors import InvalidDomainValueError, ListingSourceError
+from mercari_alert_bot.domain.errors import ListingSourceError
 from mercari_alert_bot.domain.models.listing import ItemId, Listing, ListingKind
 from mercari_alert_bot.domain.models.money import JpyAmount
 
@@ -70,13 +70,7 @@ class MercariSearchResponseMapper:
     def _map_item_or_skip(self, raw_item: object) -> Listing | None:
         try:
             return self._map_item(_UpstreamItem.model_validate(raw_item))
-        except (
-            ValidationError,
-            InvalidDomainValueError,
-            ValueError,
-            OverflowError,
-            OSError,
-        ) as error:
+        except (ValueError, OverflowError, OSError) as error:
             logger.warning(
                 "mercari_item_skipped",
                 item_id=raw_item.get("id") if isinstance(raw_item, dict) else None,
