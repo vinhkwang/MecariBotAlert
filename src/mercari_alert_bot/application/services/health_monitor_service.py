@@ -11,7 +11,7 @@ from mercari_alert_bot.shared.clock import Clock
 
 logger = structlog.get_logger(__name__)
 
-ZERO_RESULTS_ALERT_KEY = "zero_results"
+_ZERO_RESULTS_ALERT_KEY = "zero_results"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -46,7 +46,7 @@ class HealthMonitorService:
         self._update_failure_streaks(rule_outcomes)
         if _is_zero_result_cycle(rule_outcomes):
             await self._send_alert_unless_cooling_down(
-                ZERO_RESULTS_ALERT_KEY,
+                _ZERO_RESULTS_ALERT_KEY,
                 "Every scanned keyword returned zero listings. The Mercari source may be broken.",
             )
         for outcome in rule_outcomes:
