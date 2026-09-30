@@ -120,6 +120,9 @@ def test_missing_items_key_raises_shape_error(
         build_item(id="bad", price="abc"),
         build_item(id="bad", price="-1"),
         build_item(id="  "),
+        build_item(id="bad", created="99999999999999999"),
+        {key: value for key, value in build_item(id="bad").items() if key != "itemType"},
+        {key: value for key, value in build_item(id="bad").items() if key != "thumbnails"},
     ],
 )
 def test_malformed_item_is_skipped_and_others_kept(
@@ -156,8 +159,12 @@ def test_detail_photo_urls_are_distinct_in_first_seen_order(
     photo_urls = mapper.map_item_detail_photo_urls(detail_response)
 
     assert len(detail_response["data"]["photos"]) == 5
-    assert photo_urls == tuple(dict.fromkeys(detail_response["data"]["photos"]))
-    assert len(photo_urls) == 4
+    assert photo_urls == (
+        "https://static.mercdn.net/item/detail/orig/photos/m22267384686_1.jpg?1714467591",
+        "https://static.mercdn.net/item/detail/orig/photos/m22267384686_2.jpg?1714467591",
+        "https://static.mercdn.net/item/detail/orig/photos/m22267384686_3.jpg?1714467591",
+        "https://static.mercdn.net/item/detail/orig/photos/m22267384686_4.jpg?1714467591",
+    )
 
 
 @pytest.mark.parametrize("response_body", [{}, {"data": {}}, {"data": {"photos": "x"}}])

@@ -26,8 +26,8 @@ class _UpstreamItem(BaseModel):
     name: str
     price: int
     created: int
-    item_type: str = Field(default="", alias="itemType")
-    thumbnails: list[str] = []
+    item_type: str = Field(alias="itemType")
+    thumbnails: list[str]
 
 
 class _UpstreamItemDetailData(BaseModel):
@@ -70,7 +70,13 @@ class MercariSearchResponseMapper:
     def _map_item_or_skip(self, raw_item: object) -> Listing | None:
         try:
             return self._map_item(_UpstreamItem.model_validate(raw_item))
-        except (ValidationError, InvalidDomainValueError) as error:
+        except (
+            ValidationError,
+            InvalidDomainValueError,
+            ValueError,
+            OverflowError,
+            OSError,
+        ) as error:
             logger.warning(
                 "mercari_item_skipped",
                 item_id=raw_item.get("id") if isinstance(raw_item, dict) else None,
