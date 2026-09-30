@@ -72,8 +72,16 @@ def build_source(
     )
 
 
-def read_proof_claims(proof: str) -> dict[str, Any]:
-    return dict(jwt.decode(proof, options={"verify_signature": False}))
+def read_proof_claims(proof: str, dpop_proof_factory: DpopProofFactory) -> dict[str, Any]:
+    public_key = jwt.PyJWK(dpop_proof_factory.public_jwk, algorithm="ES256").key
+    return dict(
+        jwt.decode(
+            proof,
+            public_key,
+            algorithms=["ES256"],
+            options={"verify_iat": False, "verify_exp": False},
+        )
+    )
 
 
 @pytest.fixture
@@ -108,18 +116,28 @@ async def test_search_posts_expected_body_to_search_url(
         )
         await source.fetch_latest_listings("OMEGA 168.005")
 
-    body = json.loads(route.calls.last.request.content)
-    assert body["pageSize"] == 30
-    assert body["searchSessionId"] == FIXED_SEARCH_SESSION_ID
-    assert body["searchCondition"] == {
-        "keyword": "OMEGA 168.005",
-        "excludeKeyword": "",
-        "sort": "SORT_CREATED_TIME",
-        "order": "ORDER_DESC",
-        "status": ["STATUS_ON_SALE"],
+    assert json.loads(route.calls.last.request.content) == {
+        "userId": "",
+        "pageSize": 30,
+        "pageToken": "",
+        "searchSessionId": FIXED_SEARCH_SESSION_ID,
+        "indexRouting": "INDEX_ROUTING_UNSPECIFIED",
+        "thumbnailTypes": [],
+        "searchCondition": {
+            "keyword": "OMEGA 168.005",
+            "excludeKeyword": "",
+            "sort": "SORT_CREATED_TIME",
+            "order": "ORDER_DESC",
+            "status": ["STATUS_ON_SALE"],
+        },
+        "defaultDatasets": ["DATASET_TYPE_MERCARI", "DATASET_TYPE_BEYOND"],
+        "serviceFrom": "suruga",
+        "withItemBrand": False,
+        "withItemSize": False,
+        "withItemPromotions": False,
+        "withItemSizes": False,
+        "withShopname": False,
     }
-    assert body["defaultDatasets"] == ["DATASET_TYPE_MERCARI", "DATASET_TYPE_BEYOND"]
-    assert body["withShopname"] is False
 
 
 @pytest.mark.asyncio
@@ -139,7 +157,7 @@ async def test_search_sends_browser_shaped_headers(source: MercariHttpListingSou
 
 @pytest.mark.asyncio
 async def test_search_dpop_proof_binds_post_and_search_url(
-    source: MercariHttpListingSource,
+    source: MercariHttpListingSource, dpop_proof_factory: DpopProofFactory
 ) -> None:
     with respx.mock() as router:
         route = router.post(MERCARI_SEARCH_URL).respond(
@@ -147,7 +165,7 @@ async def test_search_dpop_proof_binds_post_and_search_url(
         )
         await source.fetch_latest_listings("OMEGA")
 
-    claims = read_proof_claims(route.calls.last.request.headers["DPoP"])
+    claims = read_proof_claims(route.calls.last.request.headers["DPoP"], dpop_proof_factory)
     assert claims["htm"] == "POST"
     assert claims["htu"] == MERCARI_SEARCH_URL
 
@@ -191,7 +209,9 @@ async def test_invalid_page_size_is_rejected(
 
 
 @pytest.mark.asyncio
-async def test_each_search_gets_a_fresh_dpop_proof(source: MercariHttpListingSource) -> None:
+async def test_each_search_gets_a_fresh_dpop_proof(
+    source: MercariHttpListingSource, dpop_proof_factory: DpopProofFactory
+) -> None:
     with respx.mock() as router:
         route = router.post(MERCARI_SEARCH_URL).respond(
             200, json=load_fixture("mercari_search_response.json")
@@ -200,14 +220,15 @@ async def test_each_search_gets_a_fresh_dpop_proof(source: MercariHttpListingSou
         await source.fetch_latest_listings("OMEGA")
 
     proof_identifiers = {
-        read_proof_claims(call.request.headers["DPoP"])["jti"] for call in route.calls
+        read_proof_claims(call.request.headers["DPoP"], dpop_proof_factory)["jti"]
+        for call in route.calls
     }
     assert len(proof_identifiers) == 2
 
 
 @pytest.mark.asyncio
 async def test_mercari_item_images_come_from_detail_endpoint(
-    source: MercariHttpListingSource,
+    source: MercariHttpListingSource, dpop_proof_factory: DpopProofFactory
 ) -> None:
     fixture = load_fixture("mercari_item_detail_response.json")
 
@@ -220,7 +241,7 @@ async def test_mercari_item_images_come_from_detail_endpoint(
         )
 
     assert image_urls == tuple(dict.fromkeys(fixture["data"]["photos"]))
-    claims = read_proof_claims(route.calls.last.request.headers["DPoP"])
+    claims = read_proof_claims(route.calls.last.request.headers["DPoP"], dpop_proof_factory)
     assert claims["htm"] == "GET"
     assert claims["htu"] == MERCARI_ITEM_DETAIL_URL
 
@@ -370,6 +391,23 @@ async def test_each_request_logs_status_and_duration(source: MercariHttpListingS
     assert len(request_events) == 1
     assert request_events[0]["operation"] == "search"
     assert request_events[0]["status_code"] == 200
+    assert request_events[0]["duration_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_transport_failure_logs_failure_kind_and_duration(
+    source: MercariHttpListingSource,
+) -> None:
+    with respx.mock() as router:
+        router.post(MERCARI_SEARCH_URL).mock(side_effect=httpx.ConnectTimeout("t"))
+        with capture_logs() as captured_logs, pytest.raises(MercariTransportError):
+            await source.fetch_latest_listings("OMEGA")
+
+    request_events = [log for log in captured_logs if log["event"] == "mercari_request"]
+    assert len(request_events) == 1
+    assert request_events[0]["operation"] == "search"
+    assert request_events[0]["failure_kind"] == "ConnectTimeout"
+    assert "status_code" not in request_events[0]
     assert request_events[0]["duration_ms"] >= 0
 
 
