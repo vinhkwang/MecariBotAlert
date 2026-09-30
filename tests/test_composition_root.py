@@ -37,7 +37,10 @@ from mercari_alert_bot.infrastructure.persistence.database import (
 from mercari_alert_bot.infrastructure.persistence.sqlite_keyword_rule_repository import (
     SqliteKeywordRuleRepository,
 )
-from mercari_alert_bot.infrastructure.scheduling.interval_scheduler import IntervalScheduler
+from mercari_alert_bot.infrastructure.scheduling.interval_scheduler import (
+    IntervalScheduler,
+    ScheduledJob,
+)
 from mercari_alert_bot.shared.clock import SystemClock
 from tests.fakes.in_memory_keyword_rule_repository import InMemoryKeywordRuleRepository
 from tests.fakes.in_memory_listing_repository import InMemoryListingRepository
@@ -207,12 +210,25 @@ def test_configure_process_logging_silences_httpx_info(tmp_path: Path) -> None:
         structlog.reset_defaults()
 
 
-async def test_background_scanner_stops_promptly_on_exit(tmp_path: Path) -> None:
+async def test_background_scanner_stops_promptly_on_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     settings = build_settings(tmp_path, polling_gap_seconds=3600)
+    first_cycle_finished = asyncio.Event()
+
+    def build_signalling_scan_job(*_args: Any) -> ScheduledJob:
+        async def signal_first_cycle() -> None:
+            first_cycle_finished.set()
+
+        return signal_first_cycle
+
+    monkeypatch.setattr(
+        "mercari_alert_bot.composition_root.build_scan_job", build_signalling_scan_job
+    )
 
     async with asyncio.timeout(5):
         async with run_scanner_in_background(settings):
-            await asyncio.sleep(0)
+            await first_cycle_finished.wait()
 
 
 def test_build_web_app_starts_scanner_and_serves_index(tmp_path: Path) -> None:
