@@ -58,6 +58,8 @@ def list_distinct_rule_names(matched_rules: Sequence[KeywordRule]) -> list[str]:
 
 
 def truncate_with_marker(text: str, max_length: int) -> str:
+    if max_length <= 0:
+        return ""
     if len(text) <= max_length:
         return text
     return text[: max_length - 1] + TRUNCATION_MARKER
