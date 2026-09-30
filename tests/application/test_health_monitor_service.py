@@ -166,6 +166,58 @@ async def test_logs_system_alert_delivery_failure() -> None:
     assert captured_logs[0]["alert_key"] == "zero_results"
 
 
+async def test_combines_every_failing_rule_into_one_alert() -> None:
+    harness = Harness()
+    cycle = [failed(1), failed(2), failed(3)]
+
+    for _ in range(THRESHOLD):
+        await harness.service.assess_scan_cycle(cycle)
+
+    assert len(harness.notifier.system_alerts) == 1
+    for rule_name in ("rule 1", "rule 2", "rule 3"):
+        assert rule_name in harness.notifier.system_alerts[0]
+
+
+async def test_full_outage_sends_one_failure_alert_per_cooldown_window() -> None:
+    harness = Harness()
+
+    for _ in range(10):
+        await harness.service.assess_scan_cycle([failed(1), failed(2), failed(3)])
+        harness.clock.advance(timedelta(minutes=1))
+
+    assert len(harness.notifier.system_alerts) == 1
+
+
+async def test_combined_alert_omits_rules_still_cooling_down() -> None:
+    harness = Harness()
+    for _ in range(THRESHOLD):
+        await harness.service.assess_scan_cycle([failed(1), succeeded(2)])
+    harness.clock.advance(timedelta(minutes=1))
+    await harness.service.assess_scan_cycle([failed(1), failed(2)])
+    await harness.service.assess_scan_cycle([failed(1), failed(2)])
+
+    await harness.service.assess_scan_cycle([failed(1), failed(2)])
+
+    assert len(harness.notifier.system_alerts) == 2
+    assert "rule 2" in harness.notifier.system_alerts[1]
+    assert "rule 1" not in harness.notifier.system_alerts[1]
+
+
+async def test_retries_every_listed_rule_after_combined_delivery_failure() -> None:
+    harness = Harness()
+    harness.notifier.is_failing = True
+    for _ in range(THRESHOLD):
+        await harness.service.assess_scan_cycle([failed(1), failed(2)])
+    assert harness.notifier.system_alerts == []
+    harness.notifier.is_failing = False
+
+    await harness.service.assess_scan_cycle([failed(1), failed(2)])
+
+    assert len(harness.notifier.system_alerts) == 1
+    assert "rule 1" in harness.notifier.system_alerts[0]
+    assert "rule 2" in harness.notifier.system_alerts[0]
+
+
 async def test_forgets_streak_of_rule_absent_from_cycle() -> None:
     harness = Harness()
 

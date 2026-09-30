@@ -12,6 +12,7 @@ from mercari_alert_bot.shared.clock import Clock
 logger = structlog.get_logger(__name__)
 
 _ZERO_RESULTS_ALERT_KEY = "zero_results"
+_RULE_FAILURE_ALERT_KEY = "rule_failure"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -44,18 +45,48 @@ class HealthMonitorService:
 
     async def assess_scan_cycle(self, rule_outcomes: Sequence[RuleScanOutcome]) -> None:
         self._update_failure_streaks(rule_outcomes)
+        now = self._clock.now()
         if _is_zero_result_cycle(rule_outcomes):
-            await self._send_alert_unless_cooling_down(
-                _ZERO_RESULTS_ALERT_KEY,
-                "Every scanned keyword returned zero listings. The Mercari source may be broken.",
-            )
-        for outcome in rule_outcomes:
-            failure_streak = self._failure_streak_by_rule_id[outcome.rule_id]
-            if failure_streak >= self._consecutive_failure_threshold:
-                await self._send_alert_unless_cooling_down(
-                    f"rule_failure:{outcome.rule_id}",
-                    f"Keyword '{outcome.rule_name}' failed {failure_streak} scans in a row.",
-                )
+            await self._alert_about_zero_results(now)
+        await self._alert_about_failing_rules(rule_outcomes, now)
+
+    async def _alert_about_zero_results(self, now: datetime) -> None:
+        if self._is_cooling_down(_ZERO_RESULTS_ALERT_KEY, now):
+            return
+        is_delivered = await self._deliver_system_alert(
+            _ZERO_RESULTS_ALERT_KEY,
+            "Every scanned keyword returned zero listings. The Mercari source may be broken.",
+        )
+        if is_delivered:
+            self._last_alert_sent_at_by_key[_ZERO_RESULTS_ALERT_KEY] = now
+
+    async def _alert_about_failing_rules(
+        self,
+        rule_outcomes: Sequence[RuleScanOutcome],
+        now: datetime,
+    ) -> None:
+        alertable_outcomes = [
+            outcome
+            for outcome in rule_outcomes
+            if self._failure_streak_by_rule_id[outcome.rule_id]
+            >= self._consecutive_failure_threshold
+            and not self._is_cooling_down(_rule_failure_key(outcome), now)
+        ]
+        if not alertable_outcomes:
+            return
+        rule_lines = [
+            f"- {outcome.rule_name}: {self._failure_streak_by_rule_id[outcome.rule_id]}"
+            " scans in a row"
+            for outcome in alertable_outcomes
+        ]
+        is_delivered = await self._deliver_system_alert(
+            _RULE_FAILURE_ALERT_KEY,
+            "\n".join(["Keywords failing repeatedly:", *rule_lines]),
+            rule_names=[outcome.rule_name for outcome in alertable_outcomes],
+        )
+        if is_delivered:
+            for outcome in alertable_outcomes:
+                self._last_alert_sent_at_by_key[_rule_failure_key(outcome)] = now
 
     def _update_failure_streaks(self, rule_outcomes: Sequence[RuleScanOutcome]) -> None:
         self._failure_streak_by_rule_id = {
@@ -67,18 +98,27 @@ class HealthMonitorService:
             for outcome in rule_outcomes
         }
 
-    async def _send_alert_unless_cooling_down(self, alert_key: str, message: str) -> None:
-        now = self._clock.now()
+    def _is_cooling_down(self, alert_key: str, now: datetime) -> bool:
         last_sent_at = self._last_alert_sent_at_by_key.get(alert_key)
-        if last_sent_at is not None and now - last_sent_at < self._alert_cooldown:
-            return
+        return last_sent_at is not None and now - last_sent_at < self._alert_cooldown
+
+    async def _deliver_system_alert(
+        self,
+        alert_key: str,
+        message: str,
+        **log_fields: object,
+    ) -> bool:
         try:
             await self._notifier.send_system_alert(message)
         except NotificationDeliveryError:
-            logger.warning("system_alert_delivery_failed", alert_key=alert_key)
-            return
-        self._last_alert_sent_at_by_key[alert_key] = now
-        logger.info("system_alert_sent", alert_key=alert_key)
+            logger.warning("system_alert_delivery_failed", alert_key=alert_key, **log_fields)
+            return False
+        logger.info("system_alert_sent", alert_key=alert_key, **log_fields)
+        return True
+
+
+def _rule_failure_key(outcome: RuleScanOutcome) -> str:
+    return f"rule_failure:{outcome.rule_id}"
 
 
 def _is_zero_result_cycle(rule_outcomes: Sequence[RuleScanOutcome]) -> bool:
