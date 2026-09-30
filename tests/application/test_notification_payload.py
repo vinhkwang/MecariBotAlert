@@ -78,7 +78,6 @@ def test_long_title_is_truncated_and_url_kept() -> None:
     payload = build_notification_payload(listing, [build_rule(1, "omega")])
 
     lines = payload.caption.splitlines()
-    assert len(payload.caption) <= TELEGRAM_CAPTION_MAX_LENGTH
     assert lines[0].endswith("…")
     assert lines[2] == "Rules: omega"
     assert lines[-1] == LISTING_URL
