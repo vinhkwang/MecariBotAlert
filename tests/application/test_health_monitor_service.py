@@ -218,6 +218,19 @@ async def test_retries_every_listed_rule_after_combined_delivery_failure() -> No
     assert "rule 2" in harness.notifier.system_alerts[0]
 
 
+async def test_logs_rule_names_for_combined_failure_alert() -> None:
+    harness = Harness()
+    for _ in range(THRESHOLD - 1):
+        await harness.service.assess_scan_cycle([failed(1), failed(2)])
+
+    with structlog.testing.capture_logs() as captured_logs:
+        await harness.service.assess_scan_cycle([failed(1), failed(2)])
+
+    assert [entry["event"] for entry in captured_logs] == ["system_alert_sent"]
+    assert captured_logs[0]["alert_key"] == "rule_failure"
+    assert captured_logs[0]["rule_names"] == ["rule 1", "rule 2"]
+
+
 async def test_forgets_streak_of_rule_absent_from_cycle() -> None:
     harness = Harness()
 
