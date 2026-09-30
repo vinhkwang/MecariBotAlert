@@ -11,6 +11,7 @@ import structlog
 from mercari_alert_bot.application.services.baseline_seeding_service import (
     BaselineSeedingService,
 )
+from mercari_alert_bot.application.services.health_monitor_service import RuleScanOutcome
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
 )
@@ -484,3 +485,49 @@ async def test_listing_alert_log_line_carries_matched_rule_names_as_rule_name(
     events = [json.loads(line) for line in log_stream.getvalue().splitlines()]
     alert_event = next(event for event in events if event["event"] == "listing_alert_sent")
     assert alert_event["rule_name"] == "omega, seamaster"
+
+
+async def test_report_rule_outcomes_carry_listing_count_per_detected_rule() -> None:
+    harness = Harness()
+    omega = await harness.add_seeded_rule("omega", "omega query")
+    seiko = await harness.add_seeded_rule("seiko", "seiko query")
+    harness.source.listings_by_query["omega query"] = [build_listing("m1"), build_listing("m2")]
+
+    report = await harness.run_cycle()
+
+    assert report.rule_outcomes == (
+        RuleScanOutcome(
+            rule_id=omega.rule_id, rule_name="omega", listing_count=2, has_failed=False
+        ),
+        RuleScanOutcome(
+            rule_id=seiko.rule_id, rule_name="seiko", listing_count=0, has_failed=False
+        ),
+    )
+
+
+async def test_report_rule_outcomes_mark_failed_rule() -> None:
+    harness = Harness()
+    omega = await harness.add_seeded_rule("omega", "omega query")
+    seiko = await harness.add_seeded_rule("seiko", "seiko query")
+    harness.source.failing_queries.add("omega query")
+    harness.source.listings_by_query["seiko query"] = [build_listing("m1")]
+
+    report = await harness.run_cycle()
+
+    assert report.rule_outcomes == (
+        RuleScanOutcome(rule_id=omega.rule_id, rule_name="omega", listing_count=0, has_failed=True),
+        RuleScanOutcome(
+            rule_id=seiko.rule_id, rule_name="seiko", listing_count=1, has_failed=False
+        ),
+    )
+
+
+async def test_report_rule_outcomes_skip_rule_seeded_this_cycle() -> None:
+    harness = Harness()
+    await harness.rules.add_rule("omega", "omega query")
+    seiko = await harness.add_seeded_rule("seiko", "seiko query")
+
+    report = await harness.run_cycle()
+
+    assert report.seeded_rule_names == ("omega",)
+    assert [outcome.rule_id for outcome in report.rule_outcomes] == [seiko.rule_id]
