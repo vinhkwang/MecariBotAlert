@@ -162,8 +162,12 @@ class ScanCycleService:
 
     async def _send_listing_alerts(self, options: ScanCycleOptions, tally: _CycleTally) -> None:
         for match in tally.matches_by_item_id.values():
-            listing = await self._attach_alert_images(match.listing, options)
-            await self._send_listing_alert(listing, match.matched_rules, tally)
+            matched_rule_names = _RULE_NAME_SEPARATOR.join(
+                rule.name for rule in match.matched_rules
+            )
+            with structlog.contextvars.bound_contextvars(rule_name=matched_rule_names):
+                listing = await self._attach_alert_images(match.listing, options)
+                await self._send_listing_alert(listing, match.matched_rules, tally)
 
     async def _attach_alert_images(self, listing: Listing, options: ScanCycleOptions) -> Listing:
         image_urls = listing.image_urls

@@ -468,3 +468,19 @@ async def test_seed_summary_failure_does_not_fail_cycle() -> None:
 
     assert report.seeded_rule_names == ("omega",)
     assert (await harness.rules.get_rule(rule.rule_id)).has_baseline
+
+
+async def test_listing_alert_log_line_carries_matched_rule_names_as_rule_name(
+    log_stream: StringIO,
+) -> None:
+    harness = Harness()
+    await harness.add_seeded_rule("omega", "omega query")
+    await harness.add_seeded_rule("seamaster", "seamaster query")
+    harness.source.listings_by_query["omega query"] = [build_listing("m1")]
+    harness.source.listings_by_query["seamaster query"] = [build_listing("m1")]
+
+    await harness.run_cycle()
+
+    events = [json.loads(line) for line in log_stream.getvalue().splitlines()]
+    alert_event = next(event for event in events if event["event"] == "listing_alert_sent")
+    assert alert_event["rule_name"] == "omega, seamaster"
