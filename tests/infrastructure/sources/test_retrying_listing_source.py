@@ -1,6 +1,7 @@
 import random
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from structlog.testing import capture_logs
@@ -137,6 +138,7 @@ async def test_jitter_keeps_delay_within_ratio_band() -> None:
         sleep.delays_seconds, unjittered_delays_seconds, strict=True
     ):
         assert 0.5 * unjittered_delay_seconds <= delay_seconds <= 1.5 * unjittered_delay_seconds
+    assert sleep.delays_seconds != unjittered_delays_seconds
 
 
 async def test_last_error_is_reraised_after_max_attempts() -> None:
@@ -205,6 +207,7 @@ async def test_retry_is_logged_with_attempt_and_delay() -> None:
     ]
     assert all(event["log_level"] == "warning" for event in retry_events)
     assert all(event["operation"] == "fetch_latest_listings" for event in retry_events)
+    assert [event["error"] for event in retry_events] == ["failure 1", "failure 2"]
 
 
 @pytest.mark.parametrize(
@@ -216,14 +219,13 @@ async def test_retry_is_logged_with_attempt_and_delay() -> None:
         {"jitter_ratio": 1.5},
     ],
 )
-def test_invalid_policy_is_rejected(invalid_policy_fields: dict[str, float]) -> None:
+def test_invalid_policy_is_rejected(invalid_policy_fields: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
-        RetryPolicy(**invalid_policy_fields)  # type: ignore[arg-type]
+        RetryPolicy(**invalid_policy_fields)
 
 
-def test_satisfies_listing_source_port() -> None:
-    source: ListingSource = build_retrying_source(
-        FlakyListingSource(failure_count=0), exact_policy(), RecordingSleep()
-    )
+async def test_satisfies_listing_source_port() -> None:
+    inner_source = FlakyListingSource(failure_count=0)
+    source: ListingSource = build_retrying_source(inner_source, exact_policy(), RecordingSleep())
 
-    assert isinstance(source, RetryingListingSource)
+    assert await source.fetch_latest_listings("OMEGA") == inner_source.listings
