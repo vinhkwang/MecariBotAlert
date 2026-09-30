@@ -1,56 +1,28 @@
-import asyncio
-import os
-import signal
-from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
+from fastapi import FastAPI
 
-from mercari_alert_bot.__main__ import run_scanner
-from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
-
-SHUTDOWN_TIMEOUT_SECONDS = 5
+from mercari_alert_bot import __main__ as entrypoint
 
 
-def build_idle_settings(tmp_path: Path) -> EnvSettings:
-    return EnvSettings(
-        _env_file=None,
-        telegram_bot_token="test-token",
-        telegram_chat_id="test-chat",
-        database_path=tmp_path / "bot.sqlite3",
-        keyword_seed_path=tmp_path / "missing-keywords.yaml",
-        polling_gap_seconds=3600,
-    )
-
-
-async def run_scanner_until_sigterm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    loop = asyncio.get_running_loop()
-    sigterm_handler_installed = asyncio.Event()
-    install_signal_handler = loop.add_signal_handler
-
-    def install_and_announce(sig: int, callback: Callable[[], None]) -> None:
-        install_signal_handler(sig, callback)
-        if sig == signal.SIGTERM:
-            sigterm_handler_installed.set()
-
-    monkeypatch.setattr(loop, "add_signal_handler", install_and_announce)
-    scanner_task = asyncio.create_task(run_scanner(build_idle_settings(tmp_path)))
-    async with asyncio.timeout(SHUTDOWN_TIMEOUT_SECONDS):
-        await sigterm_handler_installed.wait()
-    os.kill(os.getpid(), signal.SIGTERM)
-    async with asyncio.timeout(SHUTDOWN_TIMEOUT_SECONDS):
-        await scanner_task
-
-
-async def test_run_scanner_stops_on_sigterm(
+def test_main_serves_web_app_on_configured_host_and_port(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    await run_scanner_until_sigterm(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "bot.sqlite3"))
+    served: list[tuple[Any, dict[str, Any]]] = []
 
+    def record_run(app: Any, **kwargs: Any) -> None:
+        served.append((app, kwargs))
 
-async def test_run_scanner_removes_signal_handlers_on_exit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    await run_scanner_until_sigterm(tmp_path, monkeypatch)
+    monkeypatch.setattr(entrypoint.uvicorn, "run", record_run)
 
-    assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+    entrypoint.main()
+
+    [(app, kwargs)] = served
+    assert isinstance(app, FastAPI)
+    assert kwargs == {"host": "127.0.0.1", "port": 8080, "log_config": None}
