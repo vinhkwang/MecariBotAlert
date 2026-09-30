@@ -27,8 +27,8 @@ from mercari_alert_bot.shared.clock import Clock
 
 Sleep = Callable[[float], Awaitable[None]]
 
-ISOLATED_RULE_ERRORS: Final = (ListingSourceError, KeywordRuleNotFoundError)
-RULE_NAME_SEPARATOR: Final = ", "
+_ISOLATED_RULE_ERRORS: Final = (ListingSourceError, KeywordRuleNotFoundError)
+_RULE_NAME_SEPARATOR: Final = ", "
 
 logger = structlog.get_logger(__name__)
 
@@ -134,7 +134,7 @@ class ScanCycleService:
                 await self._detect_rule_listings(rule, tally)
             else:
                 await self._seed_rule(rule, tally)
-        except ISOLATED_RULE_ERRORS as error:
+        except _ISOLATED_RULE_ERRORS as error:
             logger.warning("rule_scan_failed", error_type=type(error).__name__)
             tally.failed_rule_names.append(rule.name)
 
@@ -204,7 +204,7 @@ class ScanCycleService:
     async def _send_seed_summary(self, tally: _CycleTally) -> None:
         if not tally.seeded_rule_names:
             return
-        rule_names = RULE_NAME_SEPARATOR.join(tally.seeded_rule_names)
+        rule_names = _RULE_NAME_SEPARATOR.join(tally.seeded_rule_names)
         message = (
             f"Baseline seeded for {len(tally.seeded_rule_names)} rule(s): {rule_names}. "
             "Alerts start next cycle."
