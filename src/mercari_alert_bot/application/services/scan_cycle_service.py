@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Final
 
@@ -12,7 +12,11 @@ from mercari_alert_bot.application.services.baseline_seeding_service import (
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
 )
-from mercari_alert_bot.domain.errors import KeywordRuleNotFoundError, ListingSourceError
+from mercari_alert_bot.domain.errors import (
+    KeywordRuleNotFoundError,
+    ListingSourceError,
+    NotificationDeliveryError,
+)
 from mercari_alert_bot.domain.models.keyword_rule import KeywordRule
 from mercari_alert_bot.domain.models.listing import ItemId, Listing
 from mercari_alert_bot.domain.ports.keyword_rule_repository import KeywordRuleRepository
@@ -100,7 +104,7 @@ class ScanCycleService:
             tally = _CycleTally()
             await self._scan_enabled_rules(options, tally)
             await self._remember_unseen_listings(tally)
-            await self._send_listing_alerts(tally)
+            await self._send_listing_alerts(options, tally)
             await self._send_seed_summary(tally)
             report = self._build_report(cycle_id, started_at, tally)
             logger.info(
@@ -156,30 +160,59 @@ class ScanCycleService:
                 scanned.unseen_listings, scanned.rule.rule_id, seen_at
             )
 
-    async def _send_listing_alerts(self, tally: _CycleTally) -> None:
+    async def _send_listing_alerts(self, options: ScanCycleOptions, tally: _CycleTally) -> None:
         for match in tally.matches_by_item_id.values():
-            await self._send_listing_alert(match, tally)
+            listing = await self._attach_alert_images(match.listing, options)
+            await self._send_listing_alert(listing, match.matched_rules, tally)
 
-    async def _send_listing_alert(self, match: _MatchedListing, tally: _CycleTally) -> None:
-        await self._notifier.send_listing_alert(match.listing, match.matched_rules)
-        await self._listing_repository.mark_listing_notified(
-            match.listing.item_id, self._clock.now()
-        )
+    async def _attach_alert_images(self, listing: Listing, options: ScanCycleOptions) -> Listing:
+        image_urls = listing.image_urls
+        if options.is_item_detail_fetch_enabled:
+            try:
+                image_urls = await self._listing_source.fetch_listing_image_urls(listing)
+            except ListingSourceError as error:
+                logger.warning(
+                    "listing_image_fetch_failed",
+                    item_id=listing.item_id,
+                    error_type=type(error).__name__,
+                )
+        return replace(listing, image_urls=image_urls[: options.max_images_per_alert])
+
+    async def _send_listing_alert(
+        self, listing: Listing, matched_rules: list[KeywordRule], tally: _CycleTally
+    ) -> None:
+        matched_rule_names = [rule.name for rule in matched_rules]
+        try:
+            await self._notifier.send_listing_alert(listing, matched_rules)
+        except NotificationDeliveryError as error:
+            tally.failed_alert_count += 1
+            logger.warning(
+                "listing_alert_failed",
+                item_id=listing.item_id,
+                matched_rule_names=matched_rule_names,
+                error_type=type(error).__name__,
+            )
+            return
+        await self._listing_repository.mark_listing_notified(listing.item_id, self._clock.now())
         tally.sent_alert_count += 1
         logger.info(
             "listing_alert_sent",
-            item_id=match.listing.item_id,
-            matched_rule_names=[rule.name for rule in match.matched_rules],
+            item_id=listing.item_id,
+            matched_rule_names=matched_rule_names,
         )
 
     async def _send_seed_summary(self, tally: _CycleTally) -> None:
         if not tally.seeded_rule_names:
             return
         rule_names = RULE_NAME_SEPARATOR.join(tally.seeded_rule_names)
-        await self._notifier.send_system_alert(
+        message = (
             f"Baseline seeded for {len(tally.seeded_rule_names)} rule(s): {rule_names}. "
             "Alerts start next cycle."
         )
+        try:
+            await self._notifier.send_system_alert(message)
+        except NotificationDeliveryError as error:
+            logger.warning("seed_summary_failed", error_type=type(error).__name__)
 
     def _build_report(
         self, cycle_id: str, started_at: datetime, tally: _CycleTally

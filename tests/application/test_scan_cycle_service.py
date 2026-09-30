@@ -1,6 +1,6 @@
 import json
 import logging
-from collections.abc import Awaitable, Callable, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from io import StringIO
@@ -19,6 +19,7 @@ from mercari_alert_bot.application.services.scan_cycle_service import (
     ScanCycleReport,
     ScanCycleService,
 )
+from mercari_alert_bot.domain.errors import ListingSourceError
 from mercari_alert_bot.domain.models.keyword_rule import KeywordRule
 from mercari_alert_bot.domain.models.listing import ItemId, Listing, ListingKind
 from mercari_alert_bot.domain.models.money import JpyAmount
@@ -64,12 +65,44 @@ class MutatingListingSource(InMemoryListingSource):
         return listings
 
 
+class DetailFetchingListingSource(InMemoryListingSource):
+    def __init__(self) -> None:
+        super().__init__()
+        self.is_detail_failing = False
+        self.detail_fetch_count = 0
+
+    async def fetch_listing_image_urls(self, listing: Listing) -> tuple[str, ...]:
+        self.detail_fetch_count += 1
+        if self.is_detail_failing:
+            raise ListingSourceError("detail failed")
+        return await super().fetch_listing_image_urls(listing)
+
+
+class KnownAtSendNotifier(RecordingNotifier):
+    def __init__(
+        self, find_known_item_ids: Callable[[Collection[ItemId]], Awaitable[frozenset[ItemId]]]
+    ) -> None:
+        super().__init__()
+        self._find_known_item_ids = find_known_item_ids
+        self.known_item_ids_at_send: list[frozenset[ItemId]] = []
+
+    async def send_listing_alert(
+        self, listing: Listing, matched_rules: Sequence[KeywordRule]
+    ) -> None:
+        self.known_item_ids_at_send.append(await self._find_known_item_ids([listing.item_id]))
+        await super().send_listing_alert(listing, matched_rules)
+
+
 class Harness:
-    def __init__(self, listing_source: InMemoryListingSource | None = None) -> None:
+    def __init__(
+        self,
+        listing_source: InMemoryListingSource | None = None,
+        notifier: RecordingNotifier | None = None,
+    ) -> None:
         self.source = listing_source or InMemoryListingSource()
         self.listings = InMemoryListingRepository()
         self.rules = InMemoryKeywordRuleRepository()
-        self.notifier = RecordingNotifier()
+        self.notifier = notifier or RecordingNotifier()
         self.clock = FrozenClock(NOW)
         self.sleeps: list[float] = []
         self.service = ScanCycleService(
@@ -350,3 +383,88 @@ async def test_every_log_line_carries_cycle_id_and_rule_lines_carry_rule_name(
     assert events_by_name["rule_scan_failed"]["rule_name"] == "omega"
     assert events_by_name["rule_baseline_seeded"]["rule_name"] == "seiko"
     assert "scan_cycle_completed" in events_by_name
+
+
+DETAIL_OPTIONS = ScanCycleOptions(
+    rule_gap_seconds=RULE_GAP_SECONDS,
+    is_item_detail_fetch_enabled=True,
+    max_images_per_alert=2,
+)
+
+
+async def test_listings_are_remembered_before_alert_is_sent() -> None:
+    notifier = KnownAtSendNotifier(lambda item_ids: harness.listings.find_known_item_ids(item_ids))
+    harness = Harness(notifier=notifier)
+    await harness.add_seeded_rule("omega", "omega query")
+    harness.source.listings_by_query["omega query"] = [build_listing("m1")]
+
+    await harness.run_cycle()
+
+    assert notifier.known_item_ids_at_send == [frozenset({ItemId("m1")})]
+
+
+async def test_alert_uses_detail_images_capped_to_max_images() -> None:
+    source = DetailFetchingListingSource()
+    harness = Harness(source)
+    await harness.add_seeded_rule("omega", "omega query")
+    listing = build_listing("m1")
+    source.listings_by_query["omega query"] = [listing]
+    source.image_urls_by_item_id[listing.item_id] = ("a.jpg", "b.jpg", "c.jpg")
+
+    await harness.run_cycle(DETAIL_OPTIONS)
+
+    assert harness.notifier.listing_alerts[0][0].image_urls == ("a.jpg", "b.jpg")
+
+
+async def test_image_fetch_failure_still_sends_alert_with_search_image() -> None:
+    source = DetailFetchingListingSource()
+    source.is_detail_failing = True
+    harness = Harness(source)
+    await harness.add_seeded_rule("omega", "omega query")
+    listing = replace(build_listing("m1"), image_urls=("search.jpg",))
+    source.listings_by_query["omega query"] = [listing]
+
+    report = await harness.run_cycle(DETAIL_OPTIONS)
+
+    assert harness.notifier.listing_alerts[0][0].image_urls == ("search.jpg",)
+    assert report.sent_alert_count == 1
+
+
+async def test_detail_fetch_disabled_skips_image_fetch() -> None:
+    source = DetailFetchingListingSource()
+    harness = Harness(source)
+    await harness.add_seeded_rule("omega", "omega query")
+    source.listings_by_query["omega query"] = [build_listing("m1")]
+
+    await harness.run_cycle()
+
+    assert source.detail_fetch_count == 0
+    assert harness.alerted_item_ids() == [ItemId("m1")]
+
+
+async def test_notification_failure_is_counted_and_not_resent_next_cycle() -> None:
+    harness = Harness()
+    await harness.add_seeded_rule("omega", "omega query")
+    harness.source.listings_by_query["omega query"] = [build_listing("m1")]
+    harness.notifier.is_failing = True
+
+    failed_report = await harness.run_cycle()
+    harness.notifier.is_failing = False
+    retry_report = await harness.run_cycle()
+
+    assert failed_report.failed_alert_count == 1
+    assert failed_report.sent_alert_count == 0
+    assert harness.notifier.listing_alerts == []
+    assert retry_report.sent_alert_count == 0
+    assert harness.listings.notified_at_by_item_id == {}
+
+
+async def test_seed_summary_failure_does_not_fail_cycle() -> None:
+    harness = Harness()
+    rule = await harness.rules.add_rule("omega", "omega query")
+    harness.notifier.is_failing = True
+
+    report = await harness.run_cycle()
+
+    assert report.seeded_rule_names == ("omega",)
+    assert (await harness.rules.get_rule(rule.rule_id)).has_baseline
