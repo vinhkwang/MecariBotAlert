@@ -1,7 +1,9 @@
+import logging
 from pathlib import Path
 from typing import Any
 
 import pytest
+import structlog
 from fastapi import FastAPI
 
 from mercari_alert_bot import __main__ as entrypoint
@@ -21,7 +23,12 @@ def test_main_serves_web_app_on_configured_host_and_port(
 
     monkeypatch.setattr(entrypoint.uvicorn, "run", record_run)
 
-    entrypoint.main()
+    try:
+        entrypoint.main()
+    finally:
+        logging.getLogger("httpx").setLevel(logging.NOTSET)
+        logging.getLogger("httpcore").setLevel(logging.NOTSET)
+        structlog.reset_defaults()
 
     [(app, kwargs)] = served
     assert isinstance(app, FastAPI)
