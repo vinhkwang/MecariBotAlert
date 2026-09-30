@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import structlog
 
 from mercari_alert_bot.application.services.health_monitor_service import (
     HealthMonitorService,
@@ -152,6 +153,17 @@ async def test_swallows_delivery_failure_and_retries_next_cycle() -> None:
     await harness.service.assess_scan_cycle([succeeded(1, 0)])
 
     assert len(harness.notifier.system_alerts) == 1
+
+
+async def test_logs_system_alert_delivery_failure() -> None:
+    harness = Harness()
+    harness.notifier.is_failing = True
+
+    with structlog.testing.capture_logs() as captured_logs:
+        await harness.service.assess_scan_cycle([succeeded(1, 0)])
+
+    assert [entry["event"] for entry in captured_logs] == ["system_alert_delivery_failed"]
+    assert captured_logs[0]["alert_key"] == "zero_results"
 
 
 async def test_forgets_streak_of_rule_absent_from_cycle() -> None:
