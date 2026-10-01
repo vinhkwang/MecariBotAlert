@@ -20,7 +20,8 @@ Bot **không** đăng nhập Mercari, **không** mua, bình luận hay nhắn ng
    làm theo hướng dẫn, lưu lại **token** nó trả về.
 2. Lấy **chat id**: nhắn một tin bất kỳ cho bot vừa tạo, rồi mở
    `https://api.telegram.org/bot<TOKEN>/getUpdates` trong trình duyệt. Số nằm
-   ở `"chat":{"id": ...}` là chat id.
+   ở `"chat":{"id": ...}` là chat id. Xong thì xoá dòng đó khỏi lịch sử trình
+   duyệt, vì URL chứa token.
 3. Tạo file cấu hình:
 
    ```bash
@@ -107,7 +108,7 @@ dùng trang quản lý.
 tối đa từ lúc item lên Mercari tới lúc bạn nhận tin. Thêm keyword là con số này
 tăng.
 
-Bấm **Save** là lưu vào database, có hiệu lực ngay và giữ qua restart.
+Bấm **Save** là lưu vào database, có hiệu lực từ chu kỳ quét kế tiếp và giữ qua restart.
 
 ## 6. Tin Telegram do bot tự gửi
 
@@ -217,6 +218,7 @@ docker compose up -d --build
 ```
 
 Dữ liệu nằm trong volume Docker riêng nên không mất khi cập nhật.
+Volume được đặt tên theo tên thư mục repo, nên **không đổi tên hay di chuyển thư mục** này; làm vậy bot sẽ khởi động với database trống. Cần chuyển máy thì sao lưu rồi khôi phục theo mục 9.
 
 ## 12. Những điều không được làm
 
