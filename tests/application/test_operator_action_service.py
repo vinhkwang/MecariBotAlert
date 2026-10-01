@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from datetime import UTC, datetime
 
 import pytest
 
@@ -9,10 +8,9 @@ from mercari_alert_bot.application.services.operator_action_service import (
 )
 from mercari_alert_bot.domain.errors import (
     InvalidDomainValueError,
-    KeywordRuleNotFoundError,
     NotificationDeliveryError,
 )
-from mercari_alert_bot.domain.models.keyword_rule import KeywordRule, KeywordRuleId
+from mercari_alert_bot.domain.models.keyword_rule import KeywordRule
 from mercari_alert_bot.domain.ports.keyword_rule_document_codec import KeywordRuleDraft
 from tests.fakes.in_memory_keyword_rule_repository import InMemoryKeywordRuleRepository
 from tests.fakes.recording_notifier import RecordingNotifier
@@ -127,30 +125,3 @@ async def test_export_encodes_every_rule() -> None:
 
     assert exported == ENCODED_DOCUMENT
     assert [rule.name for rule in codec.encoded_rules] == ["first", "second"]
-
-
-async def test_reset_rule_baseline_clears_baseline_only() -> None:
-    seeded_rule = KeywordRule(
-        rule_id=KeywordRuleId(1),
-        name="first",
-        query="alpha",
-        is_enabled=False,
-        baseline_established_at=datetime(2026, 9, 30, tzinfo=UTC),
-    )
-    repository = InMemoryKeywordRuleRepository([seeded_rule])
-    service = build_service(repository, RecordingNotifier(), StubKeywordRuleDocumentCodec())
-
-    await service.reset_rule_baseline(seeded_rule.rule_id)
-
-    rule = await repository.get_rule(seeded_rule.rule_id)
-    assert (rule.name, rule.query, rule.is_enabled) == ("first", "alpha", False)
-    assert rule.baseline_established_at is None
-
-
-async def test_reset_rule_baseline_rejects_unknown_rule() -> None:
-    service = build_service(
-        InMemoryKeywordRuleRepository(), RecordingNotifier(), StubKeywordRuleDocumentCodec()
-    )
-
-    with pytest.raises(KeywordRuleNotFoundError):
-        await service.reset_rule_baseline(KeywordRuleId(99))

@@ -5,10 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from mercari_alert_bot.application.services.operator_action_service import OperatorActionService
 from mercari_alert_bot.domain.errors import (
     InvalidDomainValueError,
-    KeywordRuleNotFoundError,
     NotificationDeliveryError,
 )
-from mercari_alert_bot.domain.models.keyword_rule import KeywordRuleId
 from mercari_alert_bot.web.schemas.actions import KeywordImportRequest, KeywordImportResponse
 
 EXPORT_MEDIA_TYPE: Final = "application/yaml"
@@ -56,11 +54,3 @@ async def export_keyword_rules(service: OperatorActionServiceDependency) -> Resp
         media_type=EXPORT_MEDIA_TYPE,
         headers=EXPORT_HEADERS,
     )
-
-
-@actions_router.post("/keywords/{rule_id}/reset-baseline", status_code=status.HTTP_204_NO_CONTENT)
-async def reset_rule_baseline(rule_id: int, service: OperatorActionServiceDependency) -> None:
-    try:
-        await service.reset_rule_baseline(KeywordRuleId(rule_id))
-    except KeywordRuleNotFoundError as error:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error

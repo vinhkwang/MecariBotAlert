@@ -1,6 +1,5 @@
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -114,32 +113,6 @@ def test_export_yaml_returns_attachment(client: TestClient) -> None:
     assert response.headers["content-type"].startswith("application/yaml")
     assert response.headers["content-disposition"] == 'attachment; filename="keywords.yaml"'
     assert response.text == f"{EXPORTED_DOCUMENT}:0"
-
-
-async def test_reset_baseline_returns_204_and_clears_baseline(
-    client: TestClient, harness: ActionsHarness
-) -> None:
-    rule = await harness.repository.add_rule("first", "alpha")
-    await harness.repository.save_rule(
-        KeywordRule(
-            rule_id=rule.rule_id,
-            name=rule.name,
-            query=rule.query,
-            is_enabled=rule.is_enabled,
-            baseline_established_at=datetime(2026, 9, 30, tzinfo=UTC),
-        )
-    )
-
-    response = client.post(f"/api/keywords/{rule.rule_id}/reset-baseline")
-
-    assert response.status_code == 204
-    assert (await harness.repository.get_rule(rule.rule_id)).baseline_established_at is None
-
-
-def test_reset_baseline_returns_404_for_unknown_rule(client: TestClient) -> None:
-    response = client.post("/api/keywords/99/reset-baseline")
-
-    assert response.status_code == 404
 
 
 def test_unwired_service_dependency_fails_loudly() -> None:

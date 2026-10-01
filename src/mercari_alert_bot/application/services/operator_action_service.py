@@ -1,9 +1,8 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Final
 
 import structlog
 
-from mercari_alert_bot.domain.models.keyword_rule import KeywordRuleId
 from mercari_alert_bot.domain.ports.keyword_rule_document_codec import KeywordRuleDocumentCodec
 from mercari_alert_bot.domain.ports.keyword_rule_repository import KeywordRuleRepository
 from mercari_alert_bot.domain.ports.notifier import Notifier
@@ -63,8 +62,3 @@ class OperatorActionService:
     async def export_keyword_rules(self) -> str:
         rules = await self._keyword_rule_repository.list_rules()
         return self._keyword_rule_document_codec.encode_rules(rules)
-
-    async def reset_rule_baseline(self, rule_id: KeywordRuleId) -> None:
-        rule = await self._keyword_rule_repository.get_rule(rule_id)
-        await self._keyword_rule_repository.save_rule(replace(rule, baseline_established_at=None))
-        logger.info("rule_baseline_reset", rule_name=rule.name)
