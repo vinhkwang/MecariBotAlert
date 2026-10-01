@@ -18,11 +18,16 @@ from mercari_alert_bot.application.services.health_monitor_service import Health
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
 )
+from mercari_alert_bot.application.services.polling_settings_service import (
+    PollingSettingsService,
+)
 from mercari_alert_bot.application.services.scan_cycle_service import (
     ScanCycleOptions,
     ScanCycleService,
 )
 from mercari_alert_bot.composition_root import (
+    ScannerRuntime,
+    build_default_polling_settings,
     build_scan_cycle_options,
     build_scan_job,
     build_web_app,
@@ -31,6 +36,7 @@ from mercari_alert_bot.composition_root import (
     run_scanner_in_background,
 )
 from mercari_alert_bot.domain.models.keyword_rule import KeywordRule
+from mercari_alert_bot.domain.models.polling_settings import PollingSettings
 from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
 from mercari_alert_bot.infrastructure.persistence.database import (
     SqliteDatabase,
@@ -38,6 +44,9 @@ from mercari_alert_bot.infrastructure.persistence.database import (
 )
 from mercari_alert_bot.infrastructure.persistence.sqlite_keyword_rule_repository import (
     SqliteKeywordRuleRepository,
+)
+from mercari_alert_bot.infrastructure.persistence.sqlite_polling_settings_repository import (
+    SqlitePollingSettingsRepository,
 )
 from mercari_alert_bot.infrastructure.scheduling.interval_scheduler import (
     IntervalScheduler,
@@ -47,6 +56,7 @@ from mercari_alert_bot.shared.clock import SystemClock
 from tests.fakes.in_memory_keyword_rule_repository import InMemoryKeywordRuleRepository
 from tests.fakes.in_memory_listing_repository import InMemoryListingRepository
 from tests.fakes.in_memory_listing_source import InMemoryListingSource
+from tests.fakes.in_memory_polling_settings_repository import InMemoryPollingSettingsRepository
 from tests.fakes.recording_notifier import RecordingNotifier
 from tests.shared.fakes import FrozenClock
 
@@ -97,7 +107,12 @@ class ScanJobHarness:
             sleep=skip_sleep,
         )
         health_monitor_service = HealthMonitorService(self.notifier, clock)
-        self.job = build_scan_job(scan_cycle_service, health_monitor_service, settings)
+        self.polling_settings_service = PollingSettingsService(
+            InMemoryPollingSettingsRepository(), build_default_polling_settings(settings)
+        )
+        self.job = build_scan_job(
+            scan_cycle_service, health_monitor_service, self.polling_settings_service
+        )
 
     async def add_seeded_rule(self, name: str, query: str) -> None:
         rule = await self.rules.add_rule(name, query)
@@ -117,7 +132,7 @@ def test_build_scan_cycle_options_maps_settings(tmp_path: Path) -> None:
         max_images_per_alert=2,
     )
 
-    assert build_scan_cycle_options(settings) == ScanCycleOptions(
+    assert build_scan_cycle_options(build_default_polling_settings(settings)) == ScanCycleOptions(
         rule_gap_seconds=18,
         is_item_detail_fetch_enabled=False,
         max_images_per_alert=2,
@@ -275,3 +290,73 @@ def test_build_web_app_serves_keywords_from_database(
     assert [rule["name"] for rule in listed.json()] == ["omega"]
     assert created.status_code == 201
     assert [rule.name for rule in asyncio.run(list_stored_rules(settings))] == ["omega", "seiko"]
+
+
+def test_build_default_polling_settings_maps_env_settings(tmp_path: Path) -> None:
+    settings = build_settings(
+        tmp_path,
+        polling_gap_seconds=18,
+        is_item_detail_fetch_enabled=False,
+        max_images_per_alert=2,
+        consecutive_failure_alert_threshold=4,
+        system_alert_cooldown_seconds=90,
+    )
+
+    assert build_default_polling_settings(settings) == PollingSettings(
+        polling_gap_seconds=18,
+        is_item_detail_fetch_enabled=False,
+        max_images_per_alert=2,
+        consecutive_failure_alert_threshold=4,
+        system_alert_cooldown_seconds=90,
+    )
+
+
+async def test_scan_job_uses_settings_updated_between_cycles(tmp_path: Path) -> None:
+    harness = ScanJobHarness(build_settings(tmp_path, consecutive_failure_alert_threshold=3))
+    await harness.add_seeded_rule("omega", "omega query")
+    harness.source.failing_queries.add("omega query")
+
+    await harness.job()
+    await harness.polling_settings_service.update_polling_settings(
+        replace(
+            harness.polling_settings_service.current_polling_settings,
+            consecutive_failure_alert_threshold=2,
+        )
+    )
+    await harness.job()
+
+    assert harness.failure_alerts() == ["Keywords failing repeatedly:\n- omega: 2 scans in a row"]
+
+
+async def test_open_scanner_loads_stored_polling_settings(tmp_path: Path) -> None:
+    settings = build_settings(tmp_path)
+    stored_settings = replace(build_default_polling_settings(settings), polling_gap_seconds=7)
+    database = await open_sqlite_database(settings.database_path)
+    try:
+        await SqlitePollingSettingsRepository(database, SystemClock()).save_polling_settings(
+            stored_settings
+        )
+    finally:
+        await database.close()
+
+    async with open_scanner(settings) as runtime:
+        assert isinstance(runtime, ScannerRuntime)
+        assert runtime.polling_settings_service.current_polling_settings == stored_settings
+
+
+def test_build_web_app_serves_settings_api(tmp_path: Path) -> None:
+    settings = build_settings(tmp_path, polling_gap_seconds=3600)
+    new_body = {
+        "polling_gap_seconds": 3000,
+        "is_item_detail_fetch_enabled": False,
+        "max_images_per_alert": 3,
+        "consecutive_failure_alert_threshold": 2,
+        "system_alert_cooldown_seconds": 10,
+    }
+
+    with TestClient(build_web_app(settings)) as client:
+        put_response = client.put("/api/settings", json=new_body)
+        get_response = client.get("/api/settings")
+
+    assert put_response.status_code == 200
+    assert get_response.json() == new_body

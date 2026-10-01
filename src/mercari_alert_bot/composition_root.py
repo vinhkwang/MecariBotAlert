@@ -22,10 +22,14 @@ from mercari_alert_bot.application.services.keyword_rule_service import KeywordR
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
 )
+from mercari_alert_bot.application.services.polling_settings_service import (
+    PollingSettingsService,
+)
 from mercari_alert_bot.application.services.scan_cycle_service import (
     ScanCycleOptions,
     ScanCycleService,
 )
+from mercari_alert_bot.domain.models.polling_settings import PollingSettings
 from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
 from mercari_alert_bot.infrastructure.notifiers.telegram_client import TelegramClient
 from mercari_alert_bot.infrastructure.notifiers.telegram_notifier import TelegramNotifier
@@ -38,6 +42,9 @@ from mercari_alert_bot.infrastructure.persistence.sqlite_keyword_rule_repository
 )
 from mercari_alert_bot.infrastructure.persistence.sqlite_listing_repository import (
     SqliteListingRepository,
+)
+from mercari_alert_bot.infrastructure.persistence.sqlite_polling_settings_repository import (
+    SqlitePollingSettingsRepository,
 )
 from mercari_alert_bot.infrastructure.scheduling.interval_scheduler import (
     IntervalScheduler,
@@ -58,6 +65,7 @@ from mercari_alert_bot.shared.clock import SystemClock
 from mercari_alert_bot.shared.logging import configure_logging
 from mercari_alert_bot.web.app import create_web_app
 from mercari_alert_bot.web.dependencies import provide_keyword_rule_service
+from mercari_alert_bot.web.routers.settings import get_polling_settings_service
 
 SCHEDULER_JITTER_RATIO: Final = 0.2
 HTTP_TIMEOUT_SECONDS: Final = 20.0
@@ -68,6 +76,7 @@ _URL_LOGGING_LIBRARY_NAMES: Final = ("httpx", "httpcore")
 class ScannerRuntime:
     scheduler: IntervalScheduler
     keyword_rule_service: KeywordRuleService
+    polling_settings_service: PollingSettingsService
 
 
 def configure_process_logging(settings: EnvSettings) -> None:
@@ -76,30 +85,41 @@ def configure_process_logging(settings: EnvSettings) -> None:
         logging.getLogger(library_name).setLevel(logging.WARNING)
 
 
-def build_scan_cycle_options(settings: EnvSettings) -> ScanCycleOptions:
-    return ScanCycleOptions(
-        rule_gap_seconds=settings.polling_gap_seconds,
+def build_default_polling_settings(settings: EnvSettings) -> PollingSettings:
+    return PollingSettings(
+        polling_gap_seconds=settings.polling_gap_seconds,
         is_item_detail_fetch_enabled=settings.is_item_detail_fetch_enabled,
         max_images_per_alert=settings.max_images_per_alert,
+        consecutive_failure_alert_threshold=settings.consecutive_failure_alert_threshold,
+        system_alert_cooldown_seconds=settings.system_alert_cooldown_seconds,
     )
 
 
-def build_system_alert_policy(settings: EnvSettings) -> SystemAlertPolicy:
+def build_scan_cycle_options(polling_settings: PollingSettings) -> ScanCycleOptions:
+    return ScanCycleOptions(
+        rule_gap_seconds=polling_settings.polling_gap_seconds,
+        is_item_detail_fetch_enabled=polling_settings.is_item_detail_fetch_enabled,
+        max_images_per_alert=polling_settings.max_images_per_alert,
+    )
+
+
+def build_system_alert_policy(polling_settings: PollingSettings) -> SystemAlertPolicy:
     return SystemAlertPolicy(
-        consecutive_failure_threshold=settings.consecutive_failure_alert_threshold,
-        alert_cooldown=timedelta(seconds=settings.system_alert_cooldown_seconds),
+        consecutive_failure_threshold=polling_settings.consecutive_failure_alert_threshold,
+        alert_cooldown=timedelta(seconds=polling_settings.system_alert_cooldown_seconds),
     )
 
 
 def build_scan_job(
     scan_cycle_service: ScanCycleService,
     health_monitor_service: HealthMonitorService,
-    settings: EnvSettings,
+    polling_settings_service: PollingSettingsService,
 ) -> ScheduledJob:
     async def run_monitored_scan_cycle() -> None:
-        report = await scan_cycle_service.run_scan_cycle(build_scan_cycle_options(settings))
+        polling_settings = polling_settings_service.current_polling_settings
+        report = await scan_cycle_service.run_scan_cycle(build_scan_cycle_options(polling_settings))
         await health_monitor_service.assess_scan_cycle(
-            report.rule_outcomes, build_system_alert_policy(settings)
+            report.rule_outcomes, build_system_alert_policy(polling_settings)
         )
 
     return run_monitored_scan_cycle
@@ -117,6 +137,11 @@ async def open_scanner(settings: EnvSettings) -> AsyncIterator[ScannerRuntime]:
         keyword_rule_repository = SqliteKeywordRuleRepository(database, clock)
         listing_repository = SqliteListingRepository(database)
         await import_seed_rules_when_empty(keyword_rule_repository, settings.keyword_seed_path)
+        polling_settings_service = PollingSettingsService(
+            SqlitePollingSettingsRepository(database, clock),
+            build_default_polling_settings(settings),
+        )
+        await polling_settings_service.load_polling_settings()
         http_client = await exit_stack.enter_async_context(
             httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS)
         )
@@ -149,12 +174,14 @@ async def open_scanner(settings: EnvSettings) -> AsyncIterator[ScannerRuntime]:
         )
         health_monitor_service = HealthMonitorService(notifier, clock)
         scheduler = IntervalScheduler(
-            build_scan_job(scan_cycle_service, health_monitor_service, settings),
-            lambda: settings.polling_gap_seconds,
+            build_scan_job(scan_cycle_service, health_monitor_service, polling_settings_service),
+            lambda: polling_settings_service.current_polling_settings.polling_gap_seconds,
             jitter_ratio=SCHEDULER_JITTER_RATIO,
             rng=rng,
         )
-        yield ScannerRuntime(scheduler, KeywordRuleService(keyword_rule_repository))
+        yield ScannerRuntime(
+            scheduler, KeywordRuleService(keyword_rule_repository), polling_settings_service
+        )
 
 
 @asynccontextmanager
@@ -174,6 +201,9 @@ def build_web_app(settings: EnvSettings) -> FastAPI:
         async with run_scanner_in_background(settings) as runtime:
             app.dependency_overrides[provide_keyword_rule_service] = lambda: (
                 runtime.keyword_rule_service
+            )
+            app.dependency_overrides[get_polling_settings_service] = lambda: (
+                runtime.polling_settings_service
             )
             yield
 
