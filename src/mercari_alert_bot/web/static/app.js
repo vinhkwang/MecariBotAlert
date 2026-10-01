@@ -105,17 +105,22 @@
     return "Since " + formatIctTime(rule.baseline_established_at);
   }
 
+  async function toggleRule(rule, isEnabled) {
+    await runAction(async () => {
+      try {
+        await requestJson("PATCH", "/api/keywords/" + rule.id, { is_enabled: isEnabled });
+      } finally {
+        await refreshKeywords();
+      }
+    }, isEnabled ? "Rule enabled" : "Rule disabled");
+  }
+
   function buildEnabledToggle(rule) {
     const checkbox = buildElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = rule.is_enabled;
     checkbox.setAttribute("aria-label", "Enable " + rule.name);
-    checkbox.addEventListener("change", () =>
-      runAction(async () => {
-        await requestJson("PATCH", "/api/keywords/" + rule.id, { is_enabled: checkbox.checked });
-        await refreshKeywords();
-      }, checkbox.checked ? "Rule enabled" : "Rule disabled"),
-    );
+    checkbox.addEventListener("change", () => toggleRule(rule, checkbox.checked));
     return checkbox;
   }
 
