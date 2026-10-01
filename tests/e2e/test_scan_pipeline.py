@@ -280,3 +280,96 @@ async def test_zero_results_across_rules_raises_system_alert(tmp_path: Path) -> 
     assert notifier.system_alerts[-1] == (
         "Every scanned keyword returned zero listings. The Mercari source may be broken."
     )
+
+
+async def test_added_rule_takes_effect_next_cycle_and_seeds_silently(tmp_path: Path) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {"omega query": [build_listing("m1", NOW - timedelta(days=1))]}
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        await pipeline.keyword_rule_service.create_rule("omega", "omega query", is_enabled=True)
+        await pipeline.run_scan_cycle()
+        source.listings_by_query["seiko query"] = [
+            build_listing("s1", NOW - timedelta(days=30)),
+            build_listing("s2", NOW - timedelta(days=60)),
+        ]
+        await pipeline.keyword_rule_service.create_rule("seiko", "seiko query", is_enabled=True)
+
+        await pipeline.run_scan_cycle()
+
+    assert "seiko query" in source.fetched_queries
+    assert notifier.listing_alerts == []
+    assert notifier.system_alerts[-1] == (
+        "Baseline seeded for 1 rule(s): seiko. Alerts start next cycle."
+    )
+
+
+async def test_query_edit_reseeds_rule_without_alerts(tmp_path: Path) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {
+        "omega query": [],
+        "omega speedmaster query": [build_listing("m1", NOW - timedelta(days=1))],
+    }
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        rule = await pipeline.keyword_rule_service.create_rule(
+            "omega", "omega query", is_enabled=True
+        )
+        await pipeline.run_scan_cycle()
+        await pipeline.keyword_rule_service.update_rule(
+            rule.rule_id, query="omega speedmaster query"
+        )
+
+        await pipeline.run_scan_cycle()
+        alerts_after_reseed = list(notifier.listing_alerts)
+        source.listings_by_query["omega speedmaster query"].append(pipeline.new_listing("m2"))
+        await pipeline.run_scan_cycle()
+
+    assert alerts_after_reseed == []
+    assert pipeline.listing_alert_item_ids() == ["m2"]
+
+
+async def test_disabled_rule_is_skipped_next_cycle(tmp_path: Path) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {"omega query": [], "seiko query": []}
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        omega_rule = await pipeline.keyword_rule_service.create_rule(
+            "omega", "omega query", is_enabled=True
+        )
+        await pipeline.keyword_rule_service.create_rule("seiko", "seiko query", is_enabled=True)
+        await pipeline.run_scan_cycle()
+        source.fetched_queries.clear()
+        await pipeline.keyword_rule_service.update_rule(omega_rule.rule_id, is_enabled=False)
+
+        await pipeline.run_scan_cycle()
+
+    assert source.fetched_queries == ["seiko query"]
+
+
+async def test_deleted_then_readded_rule_does_not_replay_alerts(tmp_path: Path) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {"omega query": []}
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        rule = await pipeline.keyword_rule_service.create_rule(
+            "omega", "omega query", is_enabled=True
+        )
+        await pipeline.run_scan_cycle()
+        source.listings_by_query["omega query"].append(pipeline.new_listing("m2"))
+        await pipeline.run_scan_cycle()
+        await pipeline.keyword_rule_service.delete_rule(rule.rule_id)
+        await pipeline.keyword_rule_service.create_rule("omega", "omega query", is_enabled=True)
+
+        await pipeline.run_scan_cycle()
+        await pipeline.run_scan_cycle()
+
+    assert pipeline.listing_alert_item_ids() == ["m2"]
