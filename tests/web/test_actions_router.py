@@ -14,7 +14,10 @@ from mercari_alert_bot.domain.errors import InvalidDomainValueError
 from mercari_alert_bot.domain.models.keyword_rule import KeywordRule
 from mercari_alert_bot.domain.ports.keyword_rule_document_codec import KeywordRuleDraft
 from mercari_alert_bot.web.app import create_web_app
-from mercari_alert_bot.web.routers.actions import get_operator_action_service
+from mercari_alert_bot.web.routers.actions import (
+    DELIVERY_FAILED_DETAIL,
+    get_operator_action_service,
+)
 from mercari_alert_bot.web.schemas.actions import KEYWORD_DOCUMENT_MAX_LENGTH
 from tests.fakes.in_memory_keyword_rule_repository import InMemoryKeywordRuleRepository
 from tests.fakes.recording_notifier import RecordingNotifier
@@ -78,14 +81,16 @@ def test_test_notification_returns_502_when_delivery_fails(
     response = client.post("/api/actions/test-notification")
 
     assert response.status_code == 502
+    assert response.json() == {"detail": DELIVERY_FAILED_DETAIL}
     assert NOTIFIER_ERROR_TEXT not in response.text
 
 
-def test_import_yaml_returns_counts(client: TestClient) -> None:
+async def test_import_yaml_returns_counts(client: TestClient, harness: ActionsHarness) -> None:
     response = client.post("/api/actions/import-yaml", json={"document_text": "alpha"})
 
     assert response.status_code == 200
     assert response.json() == {"imported_rule_count": 1, "skipped_rule_count": 0}
+    assert [rule.query for rule in await harness.repository.list_rules()] == ["alpha"]
 
 
 def test_import_yaml_returns_422_for_malformed_document(client: TestClient) -> None:
