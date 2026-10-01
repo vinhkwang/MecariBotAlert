@@ -22,6 +22,9 @@ from mercari_alert_bot.application.services.keyword_rule_service import KeywordR
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
 )
+from mercari_alert_bot.application.services.operator_action_service import (
+    OperatorActionService,
+)
 from mercari_alert_bot.application.services.polling_settings_service import (
     PollingSettingsService,
 )
@@ -36,6 +39,7 @@ from mercari_alert_bot.infrastructure.notifiers.telegram_client import TelegramC
 from mercari_alert_bot.infrastructure.notifiers.telegram_notifier import TelegramNotifier
 from mercari_alert_bot.infrastructure.persistence.database import open_sqlite_database
 from mercari_alert_bot.infrastructure.persistence.keyword_rule_yaml import (
+    YamlKeywordRuleDocumentCodec,
     import_seed_rules_when_empty,
 )
 from mercari_alert_bot.infrastructure.persistence.sqlite_keyword_rule_repository import (
@@ -73,6 +77,7 @@ from mercari_alert_bot.web.dependencies import (
     provide_polling_settings_service,
     provide_system_status_service,
 )
+from mercari_alert_bot.web.routers.actions import get_operator_action_service
 
 SCHEDULER_JITTER_RATIO: Final = 0.2
 HTTP_TIMEOUT_SECONDS: Final = 20.0
@@ -85,6 +90,7 @@ class ScannerRuntime:
     keyword_rule_service: KeywordRuleService
     polling_settings_service: PollingSettingsService
     system_status_service: SystemStatusService
+    operator_action_service: OperatorActionService
 
 
 def configure_process_logging(settings: EnvSettings) -> None:
@@ -200,6 +206,9 @@ async def open_scanner(settings: EnvSettings) -> AsyncIterator[ScannerRuntime]:
             KeywordRuleService(keyword_rule_repository),
             polling_settings_service,
             system_status_service,
+            OperatorActionService(
+                keyword_rule_repository, notifier, YamlKeywordRuleDocumentCodec()
+            ),
         )
 
 
@@ -227,9 +236,13 @@ def build_web_app(settings: EnvSettings) -> FastAPI:
             app.dependency_overrides[provide_system_status_service] = lambda: (
                 runtime.system_status_service
             )
+            app.dependency_overrides[get_operator_action_service] = lambda: (
+                runtime.operator_action_service
+            )
             try:
                 yield
             finally:
                 app.dependency_overrides.pop(provide_system_status_service, None)
+                app.dependency_overrides.pop(get_operator_action_service, None)
 
     return create_web_app(scanner_lifespan)

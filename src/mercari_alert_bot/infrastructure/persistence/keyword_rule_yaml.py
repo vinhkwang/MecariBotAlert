@@ -1,21 +1,30 @@
-from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
 
 import yaml
 
-from mercari_alert_bot.domain.errors import DomainError
+from mercari_alert_bot.domain.errors import InvalidDomainValueError
+from mercari_alert_bot.domain.models.keyword_rule import KeywordRule
+from mercari_alert_bot.domain.ports.keyword_rule_document_codec import KeywordRuleDraft
 from mercari_alert_bot.domain.ports.keyword_rule_repository import KeywordRuleRepository
 
 
-class KeywordSeedFormatError(DomainError):
+class KeywordSeedFormatError(InvalidDomainValueError):
     pass
 
 
-@dataclass(frozen=True)
-class SeedEntry:
-    name: str
-    query: str
-    is_enabled: bool
+class YamlKeywordRuleDocumentCodec:
+    def decode_rule_drafts(self, document_text: str) -> Sequence[KeywordRuleDraft]:
+        return _parse_seed_entries(document_text)
+
+    def encode_rules(self, rules: Sequence[KeywordRule]) -> str:
+        document = {
+            "keywords": [
+                {"name": rule.name, "query": rule.query, "enabled": rule.is_enabled}
+                for rule in rules
+            ]
+        }
+        return yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
 
 
 async def import_seed_rules_when_empty(repository: KeywordRuleRepository, seed_path: Path) -> int:
@@ -36,7 +45,7 @@ def _read_seed_text(seed_path: Path) -> str | None:
     return seed_path.read_text(encoding="utf-8")
 
 
-def _parse_seed_entries(seed_text: str) -> list[SeedEntry]:
+def _parse_seed_entries(seed_text: str) -> list[KeywordRuleDraft]:
     try:
         document = yaml.safe_load(seed_text)
     except yaml.YAMLError as error:
@@ -53,7 +62,7 @@ def _parse_seed_entries(seed_text: str) -> list[SeedEntry]:
     return [_parse_seed_entry(index, raw) for index, raw in enumerate(raw_entries)]
 
 
-def _parse_seed_entry(index: int, raw_entry: object) -> SeedEntry:
+def _parse_seed_entry(index: int, raw_entry: object) -> KeywordRuleDraft:
     if not isinstance(raw_entry, dict):
         raise KeywordSeedFormatError(f"keyword entry {index} must be a mapping")
     name = raw_entry.get("name")
@@ -65,14 +74,8 @@ def _parse_seed_entry(index: int, raw_entry: object) -> SeedEntry:
         raise KeywordSeedFormatError(f"keyword entry {index} needs a non-blank query")
     if not isinstance(is_enabled, bool):
         raise KeywordSeedFormatError(f"keyword entry {index} enabled must be true or false")
-    return SeedEntry(name=name, query=query, is_enabled=is_enabled)
+    return KeywordRuleDraft(name=name, query=query, is_enabled=is_enabled)
 
 
 async def export_keyword_rules_yaml(repository: KeywordRuleRepository) -> str:
-    rules = await repository.list_rules()
-    document = {
-        "keywords": [
-            {"name": rule.name, "query": rule.query, "enabled": rule.is_enabled} for rule in rules
-        ]
-    }
-    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
+    return YamlKeywordRuleDocumentCodec().encode_rules(await repository.list_rules())
