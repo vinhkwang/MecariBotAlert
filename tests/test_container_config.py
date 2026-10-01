@@ -32,14 +32,12 @@ def load_image_environment() -> dict[str, str]:
     return environment
 
 
-def parse_bind_mount_targets() -> dict[str, str]:
-    targets: dict[str, str] = {}
+def map_mount_targets_to_sources() -> dict[str, tuple[str, str]]:
+    mounts: dict[str, tuple[str, str]] = {}
     for volume in load_compose_service()["volumes"]:
         source, target, *options = volume.split(":")
-        targets[target] = source
-        if options:
-            targets[f"{target}:options"] = options[0]
-    return targets
+        mounts[target] = (source, options[0] if options else "rw")
+    return mounts
 
 
 def read_backup_script_database_path() -> str:
@@ -57,9 +55,9 @@ def test_compose_publishes_ui_on_loopback_only() -> None:
 
 
 def test_compose_keeps_database_on_named_volume() -> None:
-    mount_sources = parse_bind_mount_targets()
+    mount_sources = map_mount_targets_to_sources()
 
-    named_volume = mount_sources["/data"]
+    named_volume, _ = mount_sources["/data"]
     assert named_volume in load_compose_volumes()
     assert not named_volume.startswith((".", "/"))
 
@@ -73,10 +71,11 @@ def test_image_database_path_matches_backup_script() -> None:
 
 def test_image_seed_path_matches_compose_mount() -> None:
     seed_path = load_image_environment()["KEYWORD_SEED_PATH"]
-    mount_sources = parse_bind_mount_targets()
+    mount_sources = map_mount_targets_to_sources()
 
     assert seed_path in mount_sources
-    assert mount_sources[f"{seed_path}:options"] == "ro"
+    _, seed_mount_mode = mount_sources[seed_path]
+    assert seed_mount_mode == "ro"
 
 
 def test_dockerignore_excludes_secrets_and_local_state() -> None:
