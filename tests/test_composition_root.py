@@ -25,6 +25,7 @@ from mercari_alert_bot.application.services.scan_cycle_service import (
     ScanCycleOptions,
     ScanCycleService,
 )
+from mercari_alert_bot.application.services.system_status_service import SystemStatusService
 from mercari_alert_bot.composition_root import (
     ScannerRuntime,
     build_default_polling_settings,
@@ -54,6 +55,7 @@ from mercari_alert_bot.infrastructure.scheduling.interval_scheduler import (
 )
 from mercari_alert_bot.shared.clock import SystemClock
 from tests.fakes.in_memory_keyword_rule_repository import InMemoryKeywordRuleRepository
+from tests.fakes.in_memory_listing_history_reader import InMemoryListingHistoryReader
 from tests.fakes.in_memory_listing_repository import InMemoryListingRepository
 from tests.fakes.in_memory_listing_source import InMemoryListingSource
 from tests.fakes.in_memory_polling_settings_repository import InMemoryPollingSettingsRepository
@@ -110,8 +112,12 @@ class ScanJobHarness:
         self.polling_settings_service = PollingSettingsService(
             InMemoryPollingSettingsRepository(), build_default_polling_settings(settings)
         )
+        self.system_status_service = SystemStatusService(InMemoryListingHistoryReader())
         self.job = build_scan_job(
-            scan_cycle_service, health_monitor_service, self.polling_settings_service
+            scan_cycle_service,
+            health_monitor_service,
+            self.polling_settings_service,
+            self.system_status_service,
         )
 
     async def add_seeded_rule(self, name: str, query: str) -> None:
@@ -164,6 +170,17 @@ async def test_scan_job_alerts_after_consecutive_failures_reach_threshold(
 
     assert alerts_after_first_run == []
     assert harness.failure_alerts() == ["Keywords failing repeatedly:\n- omega: 2 scans in a row"]
+
+
+async def test_scan_job_records_cycle_in_status_service(tmp_path: Path) -> None:
+    harness = ScanJobHarness(build_settings(tmp_path))
+    await harness.add_seeded_rule("omega", "omega query")
+
+    await harness.job()
+
+    status = await harness.system_status_service.describe_system_status()
+    assert status.last_scan_cycle is not None
+    assert status.last_scan_cycle.succeeded_rule_count == 1
 
 
 async def test_open_scanner_imports_seed_rules_and_closes_database(
@@ -389,3 +406,17 @@ def test_settings_api_never_returns_telegram_secrets(tmp_path: Path) -> None:
         assert response.status_code == 200
         assert bot_token not in response.text
         assert chat_id not in response.text
+
+
+def test_build_web_app_serves_status_without_secrets(tmp_path: Path) -> None:
+    settings = build_settings(tmp_path, polling_gap_seconds=3600)
+
+    with TestClient(build_web_app(settings)) as client:
+        status_response = client.get("/api/status")
+        listings_response = client.get("/api/listings")
+
+    assert status_response.status_code == 200
+    assert listings_response.status_code == 200
+    for response in (status_response, listings_response):
+        assert "test-token" not in response.text
+        assert "test-chat" not in response.text
