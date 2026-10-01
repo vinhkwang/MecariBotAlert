@@ -36,7 +36,19 @@ CREATE INDEX listing_rule_matches_by_rule ON listing_rule_matches (rule_id, matc
 CREATE INDEX listings_by_first_seen ON listings (first_seen_at);
 """
 
-MIGRATIONS: Final[tuple[str, ...]] = (INITIAL_SCHEMA,)
+POLLING_SETTINGS_SCHEMA: Final[str] = """
+CREATE TABLE polling_settings (
+    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    polling_gap_seconds INTEGER NOT NULL,
+    is_item_detail_fetch_enabled INTEGER NOT NULL CHECK (is_item_detail_fetch_enabled IN (0, 1)),
+    max_images_per_alert INTEGER NOT NULL,
+    consecutive_failure_alert_threshold INTEGER NOT NULL,
+    system_alert_cooldown_seconds INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+MIGRATIONS: Final[tuple[str, ...]] = (INITIAL_SCHEMA, POLLING_SETTINGS_SCHEMA)
 
 
 class UnsupportedSchemaVersionError(RuntimeError):
