@@ -10,7 +10,7 @@ from mercari_alert_bot.application.services.polling_settings_service import (
 )
 from mercari_alert_bot.domain.models.polling_settings import PollingSettings
 from mercari_alert_bot.web.app import create_web_app
-from mercari_alert_bot.web.routers.settings import get_polling_settings_service
+from mercari_alert_bot.web.dependencies import provide_polling_settings_service
 from tests.fakes.in_memory_polling_settings_repository import InMemoryPollingSettingsRepository
 
 DEFAULT_SETTINGS = PollingSettings(
@@ -42,7 +42,7 @@ def service() -> PollingSettingsService:
 @pytest.fixture
 def client(service: PollingSettingsService) -> Iterator[TestClient]:
     app = create_web_app(idle_lifespan)
-    app.dependency_overrides[get_polling_settings_service] = lambda: service
+    app.dependency_overrides[provide_polling_settings_service] = lambda: service
     with TestClient(app) as test_client:
         yield test_client
 

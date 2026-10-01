@@ -5,17 +5,14 @@ from fastapi import APIRouter, Depends
 from mercari_alert_bot.application.services.polling_settings_service import (
     PollingSettingsService,
 )
+from mercari_alert_bot.web.dependencies import provide_polling_settings_service
 from mercari_alert_bot.web.schemas.polling_settings import PollingSettingsSchema
 
 router: Final = APIRouter(prefix="/api/settings")
 
 
-def get_polling_settings_service() -> PollingSettingsService:
-    raise RuntimeError("polling settings service is not wired")
-
-
 PollingSettingsServiceDependency = Annotated[
-    PollingSettingsService, Depends(get_polling_settings_service)
+    PollingSettingsService, Depends(provide_polling_settings_service)
 ]
 
 

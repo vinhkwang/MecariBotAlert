@@ -64,8 +64,10 @@ from mercari_alert_bot.infrastructure.sources.retrying_listing_source import (
 from mercari_alert_bot.shared.clock import SystemClock
 from mercari_alert_bot.shared.logging import configure_logging
 from mercari_alert_bot.web.app import create_web_app
-from mercari_alert_bot.web.dependencies import provide_keyword_rule_service
-from mercari_alert_bot.web.routers.settings import get_polling_settings_service
+from mercari_alert_bot.web.dependencies import (
+    provide_keyword_rule_service,
+    provide_polling_settings_service,
+)
 
 SCHEDULER_JITTER_RATIO: Final = 0.2
 HTTP_TIMEOUT_SECONDS: Final = 20.0
@@ -202,7 +204,7 @@ def build_web_app(settings: EnvSettings) -> FastAPI:
             app.dependency_overrides[provide_keyword_rule_service] = lambda: (
                 runtime.keyword_rule_service
             )
-            app.dependency_overrides[get_polling_settings_service] = lambda: (
+            app.dependency_overrides[provide_polling_settings_service] = lambda: (
                 runtime.polling_settings_service
             )
             yield
