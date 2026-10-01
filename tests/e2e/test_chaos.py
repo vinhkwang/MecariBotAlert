@@ -1,8 +1,7 @@
+import shutil
 from datetime import timedelta
 from pathlib import Path
 from typing import Final
-
-import pytest
 
 from tests.e2e.test_scan_pipeline import (
     NOW,
@@ -19,10 +18,6 @@ FAILURE_ALERT_PREFIX: Final = "Keywords failing repeatedly:"
 CYCLES_PAST_FAILURE_THRESHOLD: Final = 5
 
 
-class SimulatedCrashError(Exception):
-    pass
-
-
 def build_source_with_existing_listing() -> InMemoryListingSource:
     source = InMemoryListingSource()
     source.listings_by_query[OMEGA_QUERY] = [build_listing("m1", NOW - timedelta(days=1))]
@@ -32,6 +27,15 @@ def build_source_with_existing_listing() -> InMemoryListingSource:
 async def create_seeded_omega_rule(pipeline: ScanPipeline) -> None:
     await pipeline.keyword_rule_service.create_rule("omega", OMEGA_QUERY, is_enabled=True)
     await pipeline.run_scan_cycle()
+
+
+def copy_database_files_while_open(database_path: Path, crash_directory: Path) -> Path:
+    crash_directory.mkdir()
+    for suffix in ("", "-wal"):
+        source_file = database_path.with_name(database_path.name + suffix)
+        if source_file.exists():
+            shutil.copy(source_file, crash_directory / source_file.name)
+    return crash_directory / database_path.name
 
 
 def failure_system_alerts(notifier: RecordingNotifier) -> list[str]:
@@ -97,14 +101,15 @@ async def test_abrupt_close_keeps_dedup_state_on_reopen(tmp_path: Path) -> None:
     source = build_source_with_existing_listing()
     notifier = RecordingNotifier()
     clock = FrozenClock(NOW)
-    with pytest.raises(SimulatedCrashError):
-        async with open_scan_pipeline(database_path, source, notifier, clock) as first_pipeline:
-            await create_seeded_omega_rule(first_pipeline)
-            source.listings_by_query[OMEGA_QUERY].append(first_pipeline.new_listing("m2"))
-            await first_pipeline.run_scan_cycle()
-            raise SimulatedCrashError
+    async with open_scan_pipeline(database_path, source, notifier, clock) as first_pipeline:
+        await create_seeded_omega_rule(first_pipeline)
+        source.listings_by_query[OMEGA_QUERY].append(first_pipeline.new_listing("m2"))
+        await first_pipeline.run_scan_cycle()
+        crashed_database_path = copy_database_files_while_open(database_path, tmp_path / "crashed")
 
-    async with open_scan_pipeline(database_path, source, notifier, clock) as second_pipeline:
+    async with open_scan_pipeline(
+        crashed_database_path, source, notifier, clock
+    ) as second_pipeline:
         await second_pipeline.run_scan_cycle()
         await second_pipeline.run_scan_cycle()
 
