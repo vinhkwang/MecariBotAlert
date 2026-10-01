@@ -17,6 +17,8 @@ Không đăng nhập. Không tài khoản Mercari. Không mua tự động.
 | `docs/SPIKE.md` | Cổng chặn. Điền xong mới được code. |
 | `docs/UI.md` | Đặc tả UI và JSON API. |
 | `docs/VPS.md` | Cấu hình VPS, chọn nhà cung cấp, hardening. |
+| `docs/PLAN.md` | Đánh giá khả thi, estimate, chi phí. |
+| `OPERATOR.md` | Hướng dẫn vận hành cho người không phải dev. |
 
 ## Keyword
 
@@ -33,7 +35,6 @@ là đích export khi bạn muốn sao lưu cấu hình.
 Rule mới thêm lúc nào cũng được seed baseline riêng, nên nó **không bắn hàng
 chục alert** về các item đã tồn tại từ trước. Chi tiết vòng đời rule ở
 `docs/UI.md`.
-| `docs/PLAN.md` | Đánh giá khả thi, estimate, chi phí. |
 
 ## Bắt đầu
 
@@ -105,21 +106,5 @@ make cov          # báo cáo coverage
 
 ## Vận hành
 
-```bash
-docker compose up -d --build
-docker compose logs -f
-docker compose restart
-```
-
-UI không expose ra ngoài. Truy cập từ xa qua SSH tunnel:
-
-```bash
-ssh -L 8080:127.0.0.1:8080 user@vps
-```
-
-Sao lưu database:
-
-```bash
-docker run --rm -v mercari-alert-bot_listings-data:/data -v "$PWD":/backup \
-  alpine tar czf /backup/listings-backup.tar.gz -C /data .
-```
+Khởi động, theo dõi, sao lưu, khôi phục và xử lý sự cố: xem `OPERATOR.md`.
+Việc tạo VPS nằm ở `docs/VPS.md`.
