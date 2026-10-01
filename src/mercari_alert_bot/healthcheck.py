@@ -12,7 +12,7 @@ LOOPBACK_HOST: Final = "127.0.0.1"
 
 
 def build_health_url(environment: Mapping[str, str]) -> str:
-    web_port = environment.get("WEB_PORT", DEFAULT_WEB_PORT)
+    web_port = environment.get("WEB_PORT") or DEFAULT_WEB_PORT
     return f"http://{LOOPBACK_HOST}:{web_port}{HEALTH_PATH}"
 
 

@@ -1,3 +1,4 @@
+from email.message import Message
 from types import TracebackType
 from typing import Self
 from urllib.error import HTTPError, URLError
@@ -52,6 +53,10 @@ def test_health_url_defaults_to_port_8080() -> None:
     assert build_health_url({}) == HEALTH_URL
 
 
+def test_health_url_treats_empty_web_port_as_default() -> None:
+    assert build_health_url({"WEB_PORT": ""}) == HEALTH_URL
+
+
 def test_health_url_ignores_web_host() -> None:
     assert build_health_url({"WEB_HOST": "0.0.0.0"}) == HEALTH_URL
 
@@ -63,6 +68,12 @@ def test_service_is_healthy_on_status_200(monkeypatch: pytest.MonkeyPatch) -> No
     assert received_timeouts == [2.5]
 
 
+def test_service_is_unhealthy_on_non_200_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_urlopen_response(monkeypatch, 204)
+
+    assert is_service_healthy(HEALTH_URL) is False
+
+
 def test_service_is_unhealthy_on_connection_error(monkeypatch: pytest.MonkeyPatch) -> None:
     stub_urlopen_failure(monkeypatch, URLError("connection refused"))
 
@@ -70,7 +81,7 @@ def test_service_is_unhealthy_on_connection_error(monkeypatch: pytest.MonkeyPatc
 
 
 def test_service_is_unhealthy_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    stub_urlopen_failure(monkeypatch, HTTPError(HEALTH_URL, 503, "unavailable", {}, None))  # type: ignore[arg-type]
+    stub_urlopen_failure(monkeypatch, HTTPError(HEALTH_URL, 503, "unavailable", Message(), None))
 
     assert is_service_healthy(HEALTH_URL) is False
 
