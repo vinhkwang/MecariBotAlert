@@ -227,6 +227,9 @@ def build_web_app(settings: EnvSettings) -> FastAPI:
             app.dependency_overrides[provide_system_status_service] = lambda: (
                 runtime.system_status_service
             )
-            yield
+            try:
+                yield
+            finally:
+                app.dependency_overrides.pop(provide_system_status_service, None)
 
     return create_web_app(scanner_lifespan)
