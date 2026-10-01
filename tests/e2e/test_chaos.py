@@ -2,6 +2,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
+import pytest
+
 from tests.e2e.test_scan_pipeline import (
     NOW,
     ScanPipeline,
@@ -15,6 +17,10 @@ from tests.shared.fakes import FrozenClock
 OMEGA_QUERY: Final = "omega query"
 FAILURE_ALERT_PREFIX: Final = "Keywords failing repeatedly:"
 CYCLES_PAST_FAILURE_THRESHOLD: Final = 5
+
+
+class SimulatedCrashError(Exception):
+    pass
 
 
 def build_source_with_existing_listing() -> InMemoryListingSource:
@@ -66,3 +72,40 @@ async def test_source_recovery_resumes_alerts_without_replay(tmp_path: Path) -> 
         await pipeline.run_scan_cycle()
 
     assert pipeline.listing_alert_item_ids() == ["m2"]
+
+
+async def test_notifier_outage_does_not_duplicate_alert_after_recovery(tmp_path: Path) -> None:
+    source = build_source_with_existing_listing()
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        await create_seeded_omega_rule(pipeline)
+        source.listings_by_query[OMEGA_QUERY].append(pipeline.new_listing("m2"))
+        notifier.is_failing = True
+        await pipeline.run_scan_cycle()
+        notifier.is_failing = False
+
+        await pipeline.run_scan_cycle()
+        await pipeline.run_scan_cycle()
+
+    assert pipeline.listing_alert_item_ids() == []
+
+
+async def test_abrupt_close_keeps_dedup_state_on_reopen(tmp_path: Path) -> None:
+    database_path = tmp_path / "bot.sqlite3"
+    source = build_source_with_existing_listing()
+    notifier = RecordingNotifier()
+    clock = FrozenClock(NOW)
+    with pytest.raises(SimulatedCrashError):
+        async with open_scan_pipeline(database_path, source, notifier, clock) as first_pipeline:
+            await create_seeded_omega_rule(first_pipeline)
+            source.listings_by_query[OMEGA_QUERY].append(first_pipeline.new_listing("m2"))
+            await first_pipeline.run_scan_cycle()
+            raise SimulatedCrashError
+
+    async with open_scan_pipeline(database_path, source, notifier, clock) as second_pipeline:
+        await second_pipeline.run_scan_cycle()
+        await second_pipeline.run_scan_cycle()
+
+    assert [listing.item_id for listing, _ in notifier.listing_alerts] == ["m2"]
