@@ -6,6 +6,9 @@
     dateStyle: "medium",
     timeStyle: "medium",
   });
+  const JPY_PRICE_FORMAT = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY" });
+  const RECENT_LISTING_LIMIT = 20;
+  const STATUS_REFRESH_INTERVAL_MS = 30000;
 
   const messageElement = document.getElementById("message");
   const keywordRowsElement = document.getElementById("keyword-rows");
@@ -14,6 +17,8 @@
   const testNotificationButton = document.getElementById("test-notification-button");
   const settingsForm = document.getElementById("settings-form");
   const estimatedLatencyElement = document.getElementById("estimated-latency");
+  const statusDetailsElement = document.getElementById("status-details");
+  const listingItemsElement = document.getElementById("listing-items");
 
   let keywordRules = [];
   let editingRuleId = null;
@@ -312,8 +317,107 @@
     }, "Settings saved");
   }
 
+  function appendStatusEntry(term, description) {
+    statusDetailsElement.append(buildElement("dt", term), buildElement("dd", description));
+  }
+
+  function renderStatus(status) {
+    statusDetailsElement.replaceChildren();
+    const lastScanCycle = status.last_scan_cycle;
+    if (lastScanCycle) {
+      appendStatusEntry("Last cycle started", formatIctTime(lastScanCycle.started_at));
+      appendStatusEntry("Last cycle duration", lastScanCycle.duration_seconds.toFixed(1) + " s");
+      appendStatusEntry(
+        "Rules succeeded / failed",
+        lastScanCycle.succeeded_rule_count + " / " + lastScanCycle.failed_rule_count,
+      );
+    } else {
+      appendStatusEntry("Last cycle started", "no cycle yet");
+    }
+    appendStatusEntry("Consecutive failed cycles", String(status.consecutive_failed_cycle_count));
+    appendStatusEntry("Known listings", String(status.known_listing_count));
+    appendStatusEntry("Last alert sent", formatIctTime(status.last_alert_sent_at));
+  }
+
+  function isHttpUrl(text) {
+    try {
+      const protocol = new URL(text).protocol;
+      return protocol === "http:" || protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  function buildListingTitle(listing) {
+    if (!isHttpUrl(listing.url)) {
+      return buildElement("strong", listing.title);
+    }
+    const link = buildElement("a", listing.title);
+    link.href = listing.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return link;
+  }
+
+  function describeTelegramDelivery(listing) {
+    if (listing.telegram_delivery === "sent") {
+      return "Telegram: sent " + formatIctTime(listing.notified_at);
+    }
+    return "Telegram: not sent";
+  }
+
+  function buildListingMetaLine(text) {
+    const line = buildElement("div", text);
+    line.className = "listing-meta";
+    return line;
+  }
+
+  function buildListingItem(listing) {
+    const item = buildElement("li");
+    if (listing.thumbnail_url && isHttpUrl(listing.thumbnail_url)) {
+      const thumbnail = buildElement("img");
+      thumbnail.src = listing.thumbnail_url;
+      thumbnail.alt = "";
+      thumbnail.loading = "lazy";
+      thumbnail.referrerPolicy = "no-referrer";
+      item.append(thumbnail);
+    }
+    const details = buildElement("div");
+    details.append(
+      buildListingTitle(listing),
+      buildElement("div", JPY_PRICE_FORMAT.format(listing.price_jpy)),
+      buildListingMetaLine("Rules: " + listing.matched_rule_names.join(", ")),
+      buildListingMetaLine("Seen " + formatIctTime(listing.first_seen_at)),
+      buildListingMetaLine(describeTelegramDelivery(listing)),
+    );
+    item.append(details);
+    return item;
+  }
+
+  function renderListings(listings) {
+    if (listings.length === 0) {
+      listingItemsElement.replaceChildren(buildElement("li", "No listings detected yet"));
+      return;
+    }
+    listingItemsElement.replaceChildren(...listings.map(buildListingItem));
+  }
+
+  async function refreshStatus() {
+    renderStatus(await requestJson("GET", "/api/status"));
+  }
+
+  async function refreshListings() {
+    renderListings(await requestJson("GET", "/api/listings?limit=" + RECENT_LISTING_LIMIT));
+  }
+
+  function refreshStatusAndListings() {
+    return runAction(() => Promise.all([refreshStatus(), refreshListings()]));
+  }
+
   function refreshAll() {
-    return runAction(() => Promise.all([refreshKeywords(), refreshSettings()]));
+    return runAction(() =>
+      Promise.all([refreshKeywords(), refreshSettings(), refreshStatus(), refreshListings()]),
+    );
   }
 
   keywordCreateForm.addEventListener("submit", createRule);
@@ -323,4 +427,5 @@
   settingsForm.elements.polling_gap_seconds.addEventListener("input", updateEstimatedLatency);
 
   refreshAll();
+  window.setInterval(refreshStatusAndListings, STATUS_REFRESH_INTERVAL_MS);
 })();
