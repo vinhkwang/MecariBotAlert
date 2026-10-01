@@ -27,8 +27,6 @@ UPDATED_BODY = {
     "consecutive_failure_alert_threshold": 5,
     "system_alert_cooldown_seconds": 0,
 }
-TELEGRAM_BOT_TOKEN = "123456:secret-bot-token"
-TELEGRAM_CHAT_ID = "-1009876543210"
 
 
 @asynccontextmanager
@@ -97,13 +95,3 @@ def test_put_rejects_unknown_field_with_422(
 
     assert response.status_code == 422
     assert service.current_polling_settings == DEFAULT_SETTINGS
-
-
-def test_settings_responses_never_contain_telegram_secrets(client: TestClient) -> None:
-    get_response = client.get("/api/settings")
-    put_response = client.put("/api/settings", json=UPDATED_BODY)
-
-    for response in (get_response, put_response):
-        assert TELEGRAM_BOT_TOKEN not in response.text
-        assert TELEGRAM_CHAT_ID not in response.text
-        assert "telegram" not in response.text.lower()

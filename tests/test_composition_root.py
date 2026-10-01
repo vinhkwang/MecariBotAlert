@@ -360,3 +360,32 @@ def test_build_web_app_serves_settings_api(tmp_path: Path) -> None:
 
     assert put_response.status_code == 200
     assert get_response.json() == new_body
+
+
+def test_settings_api_never_returns_telegram_secrets(tmp_path: Path) -> None:
+    bot_token = "123456:distinct-bot-token-value"
+    chat_id = "-1009876543210"
+    settings = build_settings(
+        tmp_path,
+        polling_gap_seconds=3600,
+        telegram_bot_token=bot_token,
+        telegram_chat_id=chat_id,
+    )
+    new_body = {
+        "polling_gap_seconds": 3000,
+        "is_item_detail_fetch_enabled": False,
+        "max_images_per_alert": 3,
+        "consecutive_failure_alert_threshold": 2,
+        "system_alert_cooldown_seconds": 10,
+    }
+
+    with TestClient(build_web_app(settings)) as client:
+        responses = [
+            client.get("/api/settings"),
+            client.put("/api/settings", json=new_body),
+        ]
+
+    for response in responses:
+        assert response.status_code == 200
+        assert bot_token not in response.text
+        assert chat_id not in response.text
