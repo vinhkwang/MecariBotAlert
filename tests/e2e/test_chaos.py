@@ -67,9 +67,9 @@ async def test_source_recovery_resumes_alerts_without_replay(tmp_path: Path) -> 
     ) as pipeline:
         await create_seeded_omega_rule(pipeline)
         source.failing_queries.add(OMEGA_QUERY)
+        source.listings_by_query[OMEGA_QUERY].append(pipeline.new_listing("m2"))
         for _ in range(CYCLES_PAST_FAILURE_THRESHOLD):
             await pipeline.run_scan_cycle()
-        source.listings_by_query[OMEGA_QUERY].append(pipeline.new_listing("m2"))
         source.failing_queries.clear()
 
         await pipeline.run_scan_cycle()
@@ -78,7 +78,7 @@ async def test_source_recovery_resumes_alerts_without_replay(tmp_path: Path) -> 
     assert pipeline.listing_alert_item_ids() == ["m2"]
 
 
-async def test_notifier_outage_does_not_duplicate_alert_after_recovery(tmp_path: Path) -> None:
+async def test_notifier_outage_drops_alert_without_duplicate(tmp_path: Path) -> None:
     source = build_source_with_existing_listing()
     notifier = RecordingNotifier()
     async with open_scan_pipeline(
