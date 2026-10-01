@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 import structlog
+import yaml
 from fastapi.testclient import TestClient
 
 from mercari_alert_bot.application.services.baseline_seeding_service import (
@@ -420,3 +421,19 @@ def test_build_web_app_serves_status_without_secrets(tmp_path: Path) -> None:
     for response in (status_response, listings_response):
         assert "test-token" not in response.text
         assert "test-chat" not in response.text
+
+
+def test_build_web_app_serves_export_yaml_from_sqlite(tmp_path: Path) -> None:
+    settings = build_settings(tmp_path, polling_gap_seconds=3600)
+    settings.keyword_seed_path.write_text(
+        "keywords:\n  - name: omega\n    query: omega 168.005\n    enabled: false\n",
+        encoding="utf-8",
+    )
+
+    with TestClient(build_web_app(settings)) as client:
+        response = client.get("/api/actions/export-yaml")
+
+    assert response.status_code == 200
+    assert yaml.safe_load(response.text) == {
+        "keywords": [{"name": "omega", "query": "omega 168.005", "enabled": False}]
+    }
