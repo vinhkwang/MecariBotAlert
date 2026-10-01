@@ -373,3 +373,26 @@ async def test_deleted_then_readded_rule_does_not_replay_alerts(tmp_path: Path) 
         await pipeline.run_scan_cycle()
 
     assert pipeline.listing_alert_item_ids() == ["m2"]
+
+
+async def test_recent_listings_reflect_alerted_items(tmp_path: Path) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {"omega query": []}
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        await pipeline.keyword_rule_service.create_rule("omega", "omega query", is_enabled=True)
+        await pipeline.run_scan_cycle()
+        source.listings_by_query["omega query"].append(pipeline.new_listing("m2"))
+        await pipeline.run_scan_cycle()
+
+        recent_listings = await pipeline.system_status_service.list_recent_listings(10)
+        status = await pipeline.system_status_service.describe_system_status()
+
+    assert [entry.listing.item_id for entry in recent_listings] == ["m2"]
+    assert recent_listings[0].matched_rule_names == ("omega",)
+    assert recent_listings[0].is_notified
+    assert status.last_scan_cycle is not None
+    assert status.known_listing_count == 1
+    assert status.last_alert_sent_at == pipeline.clock.now()
