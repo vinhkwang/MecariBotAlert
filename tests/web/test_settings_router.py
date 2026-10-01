@@ -73,6 +73,8 @@ def test_put_saves_and_returns_new_settings(client: TestClient) -> None:
     "overrides",
     [
         {"polling_gap_seconds": 0},
+        {"polling_gap_seconds": True},
+        {"polling_gap_seconds": "30"},
         {"max_images_per_alert": 0},
         {"max_images_per_alert": 11},
         {"consecutive_failure_alert_threshold": 0},
@@ -80,7 +82,7 @@ def test_put_saves_and_returns_new_settings(client: TestClient) -> None:
     ],
 )
 def test_put_rejects_out_of_range_value_with_422(
-    client: TestClient, service: PollingSettingsService, overrides: dict[str, int]
+    client: TestClient, service: PollingSettingsService, overrides: dict[str, object]
 ) -> None:
     response = client.put("/api/settings", json={**UPDATED_BODY, **overrides})
 

@@ -1,6 +1,6 @@
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from mercari_alert_bot.domain.models.polling_settings import (
     MAX_IMAGES_PER_ALERT,
@@ -15,11 +15,13 @@ from mercari_alert_bot.domain.models.polling_settings import (
 class PollingSettingsSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    polling_gap_seconds: int = Field(ge=MIN_POLLING_GAP_SECONDS)
+    polling_gap_seconds: StrictInt = Field(ge=MIN_POLLING_GAP_SECONDS)
     is_item_detail_fetch_enabled: StrictBool
-    max_images_per_alert: int = Field(ge=MIN_IMAGES_PER_ALERT, le=MAX_IMAGES_PER_ALERT)
-    consecutive_failure_alert_threshold: int = Field(ge=MIN_CONSECUTIVE_FAILURE_ALERT_THRESHOLD)
-    system_alert_cooldown_seconds: int = Field(ge=MIN_SYSTEM_ALERT_COOLDOWN_SECONDS)
+    max_images_per_alert: StrictInt = Field(ge=MIN_IMAGES_PER_ALERT, le=MAX_IMAGES_PER_ALERT)
+    consecutive_failure_alert_threshold: StrictInt = Field(
+        ge=MIN_CONSECUTIVE_FAILURE_ALERT_THRESHOLD
+    )
+    system_alert_cooldown_seconds: StrictInt = Field(ge=MIN_SYSTEM_ALERT_COOLDOWN_SECONDS)
 
     @classmethod
     def from_polling_settings(cls, polling_settings: PollingSettings) -> Self:
