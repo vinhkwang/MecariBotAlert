@@ -10,7 +10,6 @@ services:
     volumes:
       - listings-data:/data
       - ./config/keywords.yaml:/config/keywords.yaml:ro
-      - ./backups:/backups
     logging:
       driver: json-file
       options:
