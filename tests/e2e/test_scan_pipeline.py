@@ -216,6 +216,9 @@ async def test_restart_does_not_replay_alerts(tmp_path: Path) -> None:
         await second_pipeline.run_scan_cycle()
 
     assert [listing.item_id for listing, _ in notifier.listing_alerts] == ["m2", "m3"]
+    assert notifier.system_alerts == [
+        "Baseline seeded for 1 rule(s): omega. Alerts start next cycle."
+    ]
 
 
 async def test_listing_matching_two_rules_sends_single_alert_with_both_rules(
@@ -367,11 +370,14 @@ async def test_deleted_then_readded_rule_does_not_replay_alerts(tmp_path: Path) 
         source.listings_by_query["omega query"].append(pipeline.new_listing("m2"))
         await pipeline.run_scan_cycle()
         await pipeline.keyword_rule_service.delete_rule(rule.rule_id)
+        history_after_delete = await pipeline.system_status_service.list_recent_listings(10)
         await pipeline.keyword_rule_service.create_rule("omega", "omega query", is_enabled=True)
 
         await pipeline.run_scan_cycle()
         await pipeline.run_scan_cycle()
 
+    assert [entry.listing.item_id for entry in history_after_delete] == ["m2"]
+    assert history_after_delete[0].is_notified
     assert pipeline.listing_alert_item_ids() == ["m2"]
 
 
