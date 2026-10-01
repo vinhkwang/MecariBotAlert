@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from mercari_alert_bot.web.routers.actions import actions_router
+from mercari_alert_bot.web.routers.health import router as health_router
 from mercari_alert_bot.web.routers.keywords import router as keywords_router
 from mercari_alert_bot.web.routers.settings import router as settings_router
 from mercari_alert_bot.web.routers.status import router as status_router
@@ -23,6 +24,7 @@ def create_web_app(lifespan: WebAppLifespan) -> FastAPI:
         docs_url=None,
         redoc_url=None,
     )
+    app.include_router(health_router)
     app.include_router(keywords_router)
     app.include_router(settings_router)
     app.include_router(status_router)
