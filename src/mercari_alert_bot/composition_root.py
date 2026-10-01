@@ -29,6 +29,7 @@ from mercari_alert_bot.application.services.scan_cycle_service import (
     ScanCycleOptions,
     ScanCycleService,
 )
+from mercari_alert_bot.application.services.system_status_service import SystemStatusService
 from mercari_alert_bot.domain.models.polling_settings import PollingSettings
 from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
 from mercari_alert_bot.infrastructure.notifiers.telegram_client import TelegramClient
@@ -39,6 +40,9 @@ from mercari_alert_bot.infrastructure.persistence.keyword_rule_yaml import (
 )
 from mercari_alert_bot.infrastructure.persistence.sqlite_keyword_rule_repository import (
     SqliteKeywordRuleRepository,
+)
+from mercari_alert_bot.infrastructure.persistence.sqlite_listing_history_reader import (
+    SqliteListingHistoryReader,
 )
 from mercari_alert_bot.infrastructure.persistence.sqlite_listing_repository import (
     SqliteListingRepository,
@@ -67,6 +71,7 @@ from mercari_alert_bot.web.app import create_web_app
 from mercari_alert_bot.web.dependencies import (
     provide_keyword_rule_service,
     provide_polling_settings_service,
+    provide_system_status_service,
 )
 
 SCHEDULER_JITTER_RATIO: Final = 0.2
@@ -79,6 +84,7 @@ class ScannerRuntime:
     scheduler: IntervalScheduler
     keyword_rule_service: KeywordRuleService
     polling_settings_service: PollingSettingsService
+    system_status_service: SystemStatusService
 
 
 def configure_process_logging(settings: EnvSettings) -> None:
@@ -116,10 +122,12 @@ def build_scan_job(
     scan_cycle_service: ScanCycleService,
     health_monitor_service: HealthMonitorService,
     polling_settings_service: PollingSettingsService,
+    system_status_service: SystemStatusService,
 ) -> ScheduledJob:
     async def run_monitored_scan_cycle() -> None:
         polling_settings = polling_settings_service.current_polling_settings
         report = await scan_cycle_service.run_scan_cycle(build_scan_cycle_options(polling_settings))
+        system_status_service.record_scan_cycle(report)
         await health_monitor_service.assess_scan_cycle(
             report.rule_outcomes, build_system_alert_policy(polling_settings)
         )
@@ -175,14 +183,23 @@ async def open_scanner(settings: EnvSettings) -> AsyncIterator[ScannerRuntime]:
             sleep=asyncio.sleep,
         )
         health_monitor_service = HealthMonitorService(notifier, clock)
+        system_status_service = SystemStatusService(SqliteListingHistoryReader(database))
         scheduler = IntervalScheduler(
-            build_scan_job(scan_cycle_service, health_monitor_service, polling_settings_service),
+            build_scan_job(
+                scan_cycle_service,
+                health_monitor_service,
+                polling_settings_service,
+                system_status_service,
+            ),
             lambda: polling_settings_service.current_polling_settings.polling_gap_seconds,
             jitter_ratio=SCHEDULER_JITTER_RATIO,
             rng=rng,
         )
         yield ScannerRuntime(
-            scheduler, KeywordRuleService(keyword_rule_repository), polling_settings_service
+            scheduler,
+            KeywordRuleService(keyword_rule_repository),
+            polling_settings_service,
+            system_status_service,
         )
 
 
@@ -207,6 +224,12 @@ def build_web_app(settings: EnvSettings) -> FastAPI:
             app.dependency_overrides[provide_polling_settings_service] = lambda: (
                 runtime.polling_settings_service
             )
-            yield
+            app.dependency_overrides[provide_system_status_service] = lambda: (
+                runtime.system_status_service
+            )
+            try:
+                yield
+            finally:
+                app.dependency_overrides.pop(provide_system_status_service, None)
 
     return create_web_app(scanner_lifespan)
