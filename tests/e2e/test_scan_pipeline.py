@@ -194,3 +194,89 @@ async def test_same_listing_is_not_alerted_twice(tmp_path: Path) -> None:
         await pipeline.run_scan_cycle()
 
     assert pipeline.listing_alert_item_ids() == ["m2"]
+
+
+async def test_restart_does_not_replay_alerts(tmp_path: Path) -> None:
+    database_path = tmp_path / "bot.sqlite3"
+    source = InMemoryListingSource()
+    source.listings_by_query["omega query"] = []
+    notifier = RecordingNotifier()
+    clock = FrozenClock(NOW)
+    async with open_scan_pipeline(database_path, source, notifier, clock) as first_pipeline:
+        await first_pipeline.keyword_rule_service.create_rule(
+            "omega", "omega query", is_enabled=True
+        )
+        await first_pipeline.run_scan_cycle()
+        source.listings_by_query["omega query"].append(first_pipeline.new_listing("m2"))
+        await first_pipeline.run_scan_cycle()
+
+    async with open_scan_pipeline(database_path, source, notifier, clock) as second_pipeline:
+        await second_pipeline.run_scan_cycle()
+        source.listings_by_query["omega query"].append(second_pipeline.new_listing("m3"))
+        await second_pipeline.run_scan_cycle()
+
+    assert [listing.item_id for listing, _ in notifier.listing_alerts] == ["m2", "m3"]
+
+
+async def test_listing_matching_two_rules_sends_single_alert_with_both_rules(
+    tmp_path: Path,
+) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {"omega query": [], "seiko query": []}
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        await pipeline.keyword_rule_service.create_rule("omega", "omega query", is_enabled=True)
+        await pipeline.keyword_rule_service.create_rule("seiko", "seiko query", is_enabled=True)
+        await pipeline.run_scan_cycle()
+        shared_listing = pipeline.new_listing("m9")
+        source.listings_by_query["omega query"].append(shared_listing)
+        source.listings_by_query["seiko query"].append(shared_listing)
+
+        await pipeline.run_scan_cycle()
+
+    assert len(notifier.listing_alerts) == 1
+    alerted_listing, matched_rules = notifier.listing_alerts[0]
+    assert alerted_listing.item_id == "m9"
+    assert sorted(rule.name for rule in matched_rules) == ["omega", "seiko"]
+
+
+async def test_failing_rule_does_not_stop_other_rules(tmp_path: Path) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {"omega query": [], "seiko query": []}
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        await pipeline.keyword_rule_service.create_rule("omega", "omega query", is_enabled=True)
+        await pipeline.keyword_rule_service.create_rule("seiko", "seiko query", is_enabled=True)
+        await pipeline.run_scan_cycle()
+        source.failing_queries.add("omega query")
+        source.listings_by_query["seiko query"].append(pipeline.new_listing("s1"))
+
+        await pipeline.run_scan_cycle()
+
+    assert pipeline.listing_alert_item_ids() == ["s1"]
+
+
+async def test_zero_results_across_rules_raises_system_alert(tmp_path: Path) -> None:
+    source = InMemoryListingSource()
+    source.listings_by_query = {
+        "omega query": [build_listing("m1", NOW - timedelta(days=1))],
+        "seiko query": [build_listing("s1", NOW - timedelta(days=1))],
+    }
+    notifier = RecordingNotifier()
+    async with open_scan_pipeline(
+        tmp_path / "bot.sqlite3", source, notifier, FrozenClock(NOW)
+    ) as pipeline:
+        await pipeline.keyword_rule_service.create_rule("omega", "omega query", is_enabled=True)
+        await pipeline.keyword_rule_service.create_rule("seiko", "seiko query", is_enabled=True)
+        await pipeline.run_scan_cycle()
+        source.listings_by_query = {"omega query": [], "seiko query": []}
+
+        await pipeline.run_scan_cycle()
+
+    assert notifier.system_alerts[-1] == (
+        "Every scanned keyword returned zero listings. The Mercari source may be broken."
+    )
