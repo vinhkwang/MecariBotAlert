@@ -1,6 +1,7 @@
 import json
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
 from mercari_alert_bot.domain.models.listing import ItemId, Listing, ListingKind
 from mercari_alert_bot.domain.models.listing_history import ListingHistoryEntry
@@ -54,7 +55,7 @@ class SqliteListingHistoryReader:
         return [_build_history_entry(tuple(row)) for row in rows]
 
 
-def _build_history_entry(row: tuple[object, ...]) -> ListingHistoryEntry:
+def _build_history_entry(row: tuple[Any, ...]) -> ListingHistoryEntry:
     (
         item_id,
         kind,
@@ -68,17 +69,17 @@ def _build_history_entry(row: tuple[object, ...]) -> ListingHistoryEntry:
         matched_rule_names,
     ) = row
     listing = Listing(
-        item_id=ItemId(str(item_id)),
-        kind=ListingKind(str(kind)),
-        title=str(title),
-        price=JpyAmount(int(str(price_jpy))),
-        url=str(url),
-        image_urls=tuple(json.loads(str(image_urls))),
-        created_at=datetime.fromisoformat(str(listed_at)),
+        item_id=ItemId(item_id),
+        kind=ListingKind(kind),
+        title=title,
+        price=JpyAmount(price_jpy),
+        url=url,
+        image_urls=tuple(json.loads(image_urls)),
+        created_at=datetime.fromisoformat(listed_at),
     )
     return ListingHistoryEntry(
         listing=listing,
-        matched_rule_names=tuple(sorted(json.loads(str(matched_rule_names)))),
-        first_seen_at=datetime.fromisoformat(str(first_seen_at)),
-        notified_at=None if notified_at is None else datetime.fromisoformat(str(notified_at)),
+        matched_rule_names=tuple(sorted(json.loads(matched_rule_names))),
+        first_seen_at=datetime.fromisoformat(first_seen_at),
+        notified_at=None if notified_at is None else datetime.fromisoformat(notified_at),
     )
