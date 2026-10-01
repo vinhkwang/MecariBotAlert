@@ -258,7 +258,16 @@ def test_build_web_app_fails_startup_for_yaml_rule_source(tmp_path: Path) -> Non
         pass
 
 
-def test_build_web_app_serves_keywords_from_database(tmp_path: Path) -> None:
+def test_build_web_app_serves_keywords_from_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def build_idle_scan_job(*_args: Any) -> ScheduledJob:
+        async def run_nothing() -> None:
+            return None
+
+        return run_nothing
+
+    monkeypatch.setattr("mercari_alert_bot.composition_root.build_scan_job", build_idle_scan_job)
     settings = build_settings(tmp_path, polling_gap_seconds=3600)
     settings.keyword_seed_path.write_text(
         "keywords:\n  - name: omega\n    query: omega 168.005\n", encoding="utf-8"
