@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -29,6 +30,7 @@ from mercari_alert_bot.composition_root import (
     open_scanner,
     run_scanner_in_background,
 )
+from mercari_alert_bot.domain.models.keyword_rule import KeywordRule
 from mercari_alert_bot.infrastructure.config.env_settings import EnvSettings
 from mercari_alert_bot.infrastructure.persistence.database import (
     SqliteDatabase,
@@ -50,6 +52,14 @@ from tests.shared.fakes import FrozenClock
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 FAILURE_ALERT_PREFIX = "Keywords failing repeatedly:"
+
+
+async def list_stored_rules(settings: EnvSettings) -> Sequence[KeywordRule]:
+    database = await open_sqlite_database(settings.database_path)
+    try:
+        return await SqliteKeywordRuleRepository(database, SystemClock()).list_rules()
+    finally:
+        await database.close()
 
 
 def build_settings(tmp_path: Path, **overrides: Any) -> EnvSettings:
@@ -173,8 +183,8 @@ async def test_open_scanner_imports_seed_rules_and_closes_database(
         "mercari_alert_bot.composition_root.httpx.AsyncClient", CapturingAsyncClient
     )
 
-    async with open_scanner(settings) as scheduler:
-        assert isinstance(scheduler, IntervalScheduler)
+    async with open_scanner(settings) as runtime:
+        assert isinstance(runtime.scheduler, IntervalScheduler)
 
     assert captured_clients[0].is_closed
     with pytest.raises(ValueError, match="no active connection"):
@@ -246,3 +256,27 @@ def test_build_web_app_fails_startup_for_yaml_rule_source(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="yaml"), TestClient(build_web_app(settings)):
         pass
+
+
+def test_build_web_app_serves_keywords_from_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def build_idle_scan_job(*_args: Any) -> ScheduledJob:
+        async def run_nothing() -> None:
+            return None
+
+        return run_nothing
+
+    monkeypatch.setattr("mercari_alert_bot.composition_root.build_scan_job", build_idle_scan_job)
+    settings = build_settings(tmp_path, polling_gap_seconds=3600)
+    settings.keyword_seed_path.write_text(
+        "keywords:\n  - name: omega\n    query: omega 168.005\n", encoding="utf-8"
+    )
+
+    with TestClient(build_web_app(settings)) as client:
+        listed = client.get("/api/keywords")
+        created = client.post("/api/keywords", json={"name": "seiko", "query": "seiko 6139"})
+
+    assert [rule["name"] for rule in listed.json()] == ["omega"]
+    assert created.status_code == 201
+    assert [rule.name for rule in asyncio.run(list_stored_rules(settings))] == ["omega", "seiko"]

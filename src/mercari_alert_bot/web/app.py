@@ -6,6 +6,8 @@ from typing import Final
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from mercari_alert_bot.web.routers.keywords import router as keywords_router
+
 WebAppLifespan = Callable[[FastAPI], AbstractAsyncContextManager[None]]
 
 STATIC_DIRECTORY: Final[Path] = Path(__file__).parent / "static"
@@ -18,5 +20,6 @@ def create_web_app(lifespan: WebAppLifespan) -> FastAPI:
         docs_url=None,
         redoc_url=None,
     )
+    app.include_router(keywords_router)
     app.mount("/", StaticFiles(directory=STATIC_DIRECTORY, html=True), name="static")
     return app

@@ -4,6 +4,7 @@ import random
 import sys
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Final
 
@@ -14,6 +15,7 @@ from mercari_alert_bot.application.services.baseline_seeding_service import (
     BaselineSeedingService,
 )
 from mercari_alert_bot.application.services.health_monitor_service import HealthMonitorService
+from mercari_alert_bot.application.services.keyword_rule_service import KeywordRuleService
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
 )
@@ -52,10 +54,17 @@ from mercari_alert_bot.infrastructure.sources.retrying_listing_source import (
 from mercari_alert_bot.shared.clock import SystemClock
 from mercari_alert_bot.shared.logging import configure_logging
 from mercari_alert_bot.web.app import create_web_app
+from mercari_alert_bot.web.dependencies import provide_keyword_rule_service
 
 SCHEDULER_JITTER_RATIO: Final = 0.2
 HTTP_TIMEOUT_SECONDS: Final = 20.0
 _URL_LOGGING_LIBRARY_NAMES: Final = ("httpx", "httpcore")
+
+
+@dataclass(frozen=True, slots=True)
+class ScannerRuntime:
+    scheduler: IntervalScheduler
+    keyword_rule_service: KeywordRuleService
 
 
 def configure_process_logging(settings: EnvSettings) -> None:
@@ -85,7 +94,7 @@ def build_scan_job(
 
 
 @asynccontextmanager
-async def open_scanner(settings: EnvSettings) -> AsyncIterator[IntervalScheduler]:
+async def open_scanner(settings: EnvSettings) -> AsyncIterator[ScannerRuntime]:
     if settings.keyword_rule_source == "yaml":
         raise ValueError("keyword_rule_source 'yaml' has no repository implementation")
     clock = SystemClock()
@@ -132,29 +141,33 @@ async def open_scanner(settings: EnvSettings) -> AsyncIterator[IntervalScheduler
             consecutive_failure_threshold=settings.consecutive_failure_alert_threshold,
             alert_cooldown=timedelta(seconds=settings.system_alert_cooldown_seconds),
         )
-        yield IntervalScheduler(
+        scheduler = IntervalScheduler(
             build_scan_job(scan_cycle_service, health_monitor_service, settings),
             lambda: settings.polling_gap_seconds,
             jitter_ratio=SCHEDULER_JITTER_RATIO,
             rng=rng,
         )
+        yield ScannerRuntime(scheduler, KeywordRuleService(keyword_rule_repository))
 
 
 @asynccontextmanager
-async def run_scanner_in_background(settings: EnvSettings) -> AsyncIterator[None]:
-    async with open_scanner(settings) as scheduler:
-        scanner_task = asyncio.create_task(scheduler.run())
+async def run_scanner_in_background(settings: EnvSettings) -> AsyncIterator[ScannerRuntime]:
+    async with open_scanner(settings) as runtime:
+        scanner_task = asyncio.create_task(runtime.scheduler.run())
         try:
-            yield
+            yield runtime
         finally:
-            scheduler.request_stop()
+            runtime.scheduler.request_stop()
             await scanner_task
 
 
 def build_web_app(settings: EnvSettings) -> FastAPI:
     @asynccontextmanager
-    async def scanner_lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        async with run_scanner_in_background(settings):
+    async def scanner_lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with run_scanner_in_background(settings) as runtime:
+            app.dependency_overrides[provide_keyword_rule_service] = lambda: (
+                runtime.keyword_rule_service
+            )
             yield
 
     return create_web_app(scanner_lifespan)
