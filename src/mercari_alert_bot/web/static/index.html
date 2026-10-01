@@ -2,9 +2,65 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mercari Alert Bot</title>
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
 </head>
 <body>
+<header>
 <h1>Mercari Alert Bot</h1>
+<p id="message" role="status" aria-live="polite"></p>
+</header>
+<main>
+<section id="keywords">
+<h2>Keywords</h2>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th>Name</th><th>Query</th><th>Enabled</th><th>Baseline</th><th>Actions</th></tr>
+</thead>
+<tbody id="keyword-rows"></tbody>
+</table>
+</div>
+<form id="keyword-create-form">
+<h3>Add keyword</h3>
+<label>Name <input name="name" required maxlength="200"></label>
+<label>Query <input name="query" required maxlength="200"></label>
+<label class="inline"><input type="checkbox" name="is_enabled" checked> Enabled</label>
+<button type="submit">Add</button>
+<p class="hint">A new keyword seeds its baseline on the next cycle and sends no alerts for listings that already exist.</p>
+</form>
+<form id="keyword-import-form">
+<h3>Import YAML</h3>
+<textarea name="document_text" rows="6" required></textarea>
+<button type="submit">Import</button>
+</form>
+<div class="actions">
+<a href="/api/actions/export-yaml" download="keywords.yaml">Export YAML</a>
+<button type="button" id="test-notification-button">Send test alert</button>
+</div>
+</section>
+<section id="settings">
+<h2>Polling settings</h2>
+<form id="settings-form">
+<label>Gap between rules (seconds) <input type="number" name="polling_gap_seconds" min="1" required></label>
+<label class="inline"><input type="checkbox" name="is_item_detail_fetch_enabled"> Fetch item detail</label>
+<label>Max images per alert <input type="number" name="max_images_per_alert" min="1" max="10" required></label>
+<label>Consecutive failures before alert <input type="number" name="consecutive_failure_alert_threshold" min="1" required></label>
+<label>System alert cooldown (seconds) <input type="number" name="system_alert_cooldown_seconds" min="0" required></label>
+<button type="submit">Save</button>
+</form>
+<p>Estimated p95 latency: <output id="estimated-latency"></output></p>
+</section>
+<section id="status">
+<h2>Status</h2>
+<dl id="status-details"></dl>
+</section>
+<section id="listings">
+<h2>Recent listings</h2>
+<ul id="listing-items"></ul>
+</section>
+</main>
 </body>
 </html>
