@@ -23,35 +23,40 @@ class RuleScanOutcome:
     has_failed: bool
 
 
-class HealthMonitorService:
-    def __init__(
-        self,
-        notifier: Notifier,
-        clock: Clock,
-        *,
-        consecutive_failure_threshold: int,
-        alert_cooldown: timedelta,
-    ) -> None:
-        if consecutive_failure_threshold < 1:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SystemAlertPolicy:
+    consecutive_failure_threshold: int
+    alert_cooldown: timedelta
+
+    def __post_init__(self) -> None:
+        if self.consecutive_failure_threshold < 1:
             raise ValueError("consecutive_failure_threshold must be at least 1")
-        if alert_cooldown < timedelta(0):
+        if self.alert_cooldown < timedelta(0):
             raise ValueError("alert_cooldown must not be negative")
+
+
+class HealthMonitorService:
+    def __init__(self, notifier: Notifier, clock: Clock) -> None:
         self._notifier = notifier
         self._clock = clock
-        self._consecutive_failure_threshold = consecutive_failure_threshold
-        self._alert_cooldown = alert_cooldown
         self._failure_streak_by_rule_id: dict[KeywordRuleId, int] = {}
         self._last_alert_sent_at_by_key: dict[str, datetime] = {}
 
-    async def assess_scan_cycle(self, rule_outcomes: Sequence[RuleScanOutcome]) -> None:
+    async def assess_scan_cycle(
+        self,
+        rule_outcomes: Sequence[RuleScanOutcome],
+        alert_policy: SystemAlertPolicy,
+    ) -> None:
         self._update_failure_streaks(rule_outcomes)
         now = self._clock.now()
         if _is_zero_result_cycle(rule_outcomes):
-            await self._alert_about_zero_results(now)
-        await self._alert_about_failing_rules(rule_outcomes, now)
+            await self._alert_about_zero_results(now, alert_policy)
+        await self._alert_about_failing_rules(rule_outcomes, now, alert_policy)
 
-    async def _alert_about_zero_results(self, now: datetime) -> None:
-        if self._is_cooling_down(_ZERO_RESULTS_ALERT_KEY, now):
+    async def _alert_about_zero_results(
+        self, now: datetime, alert_policy: SystemAlertPolicy
+    ) -> None:
+        if self._is_cooling_down(_ZERO_RESULTS_ALERT_KEY, now, alert_policy):
             return
         is_delivered = await self._deliver_system_alert(
             _ZERO_RESULTS_ALERT_KEY,
@@ -64,13 +69,14 @@ class HealthMonitorService:
         self,
         rule_outcomes: Sequence[RuleScanOutcome],
         now: datetime,
+        alert_policy: SystemAlertPolicy,
     ) -> None:
         alertable_outcomes = [
             outcome
             for outcome in rule_outcomes
             if self._failure_streak_by_rule_id[outcome.rule_id]
-            >= self._consecutive_failure_threshold
-            and not self._is_cooling_down(_rule_failure_key(outcome), now)
+            >= alert_policy.consecutive_failure_threshold
+            and not self._is_cooling_down(_rule_failure_key(outcome), now, alert_policy)
         ]
         if not alertable_outcomes:
             return
@@ -98,9 +104,11 @@ class HealthMonitorService:
             for outcome in rule_outcomes
         }
 
-    def _is_cooling_down(self, alert_key: str, now: datetime) -> bool:
+    def _is_cooling_down(
+        self, alert_key: str, now: datetime, alert_policy: SystemAlertPolicy
+    ) -> bool:
         last_sent_at = self._last_alert_sent_at_by_key.get(alert_key)
-        return last_sent_at is not None and now - last_sent_at < self._alert_cooldown
+        return last_sent_at is not None and now - last_sent_at < alert_policy.alert_cooldown
 
     async def _deliver_system_alert(
         self,

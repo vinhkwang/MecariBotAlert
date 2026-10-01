@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -96,12 +96,7 @@ class ScanJobHarness:
             clock=clock,
             sleep=skip_sleep,
         )
-        health_monitor_service = HealthMonitorService(
-            self.notifier,
-            clock,
-            consecutive_failure_threshold=settings.consecutive_failure_alert_threshold,
-            alert_cooldown=timedelta(seconds=settings.system_alert_cooldown_seconds),
-        )
+        health_monitor_service = HealthMonitorService(self.notifier, clock)
         self.job = build_scan_job(scan_cycle_service, health_monitor_service, settings)
 
     async def add_seeded_rule(self, name: str, query: str) -> None:

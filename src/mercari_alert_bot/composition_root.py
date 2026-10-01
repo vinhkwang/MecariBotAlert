@@ -14,7 +14,10 @@ from fastapi import FastAPI
 from mercari_alert_bot.application.services.baseline_seeding_service import (
     BaselineSeedingService,
 )
-from mercari_alert_bot.application.services.health_monitor_service import HealthMonitorService
+from mercari_alert_bot.application.services.health_monitor_service import (
+    HealthMonitorService,
+    SystemAlertPolicy,
+)
 from mercari_alert_bot.application.services.keyword_rule_service import KeywordRuleService
 from mercari_alert_bot.application.services.new_listing_detection_service import (
     NewListingDetectionService,
@@ -81,6 +84,13 @@ def build_scan_cycle_options(settings: EnvSettings) -> ScanCycleOptions:
     )
 
 
+def build_system_alert_policy(settings: EnvSettings) -> SystemAlertPolicy:
+    return SystemAlertPolicy(
+        consecutive_failure_threshold=settings.consecutive_failure_alert_threshold,
+        alert_cooldown=timedelta(seconds=settings.system_alert_cooldown_seconds),
+    )
+
+
 def build_scan_job(
     scan_cycle_service: ScanCycleService,
     health_monitor_service: HealthMonitorService,
@@ -88,7 +98,9 @@ def build_scan_job(
 ) -> ScheduledJob:
     async def run_monitored_scan_cycle() -> None:
         report = await scan_cycle_service.run_scan_cycle(build_scan_cycle_options(settings))
-        await health_monitor_service.assess_scan_cycle(report.rule_outcomes)
+        await health_monitor_service.assess_scan_cycle(
+            report.rule_outcomes, build_system_alert_policy(settings)
+        )
 
     return run_monitored_scan_cycle
 
@@ -135,12 +147,7 @@ async def open_scanner(settings: EnvSettings) -> AsyncIterator[ScannerRuntime]:
             clock=clock,
             sleep=asyncio.sleep,
         )
-        health_monitor_service = HealthMonitorService(
-            notifier,
-            clock,
-            consecutive_failure_threshold=settings.consecutive_failure_alert_threshold,
-            alert_cooldown=timedelta(seconds=settings.system_alert_cooldown_seconds),
-        )
+        health_monitor_service = HealthMonitorService(notifier, clock)
         scheduler = IntervalScheduler(
             build_scan_job(scan_cycle_service, health_monitor_service, settings),
             lambda: settings.polling_gap_seconds,
