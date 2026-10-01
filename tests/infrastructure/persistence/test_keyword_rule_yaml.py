@@ -3,9 +3,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+from mercari_alert_bot.domain.errors import InvalidDomainValueError
 from mercari_alert_bot.domain.models.keyword_rule import KeywordRule, KeywordRuleId
 from mercari_alert_bot.infrastructure.persistence.keyword_rule_yaml import (
     KeywordSeedFormatError,
+    YamlKeywordRuleDocumentCodec,
     export_keyword_rules_yaml,
     import_seed_rules_when_empty,
 )
@@ -183,3 +185,35 @@ async def test_export_then_import_round_trips(tmp_path: Path) -> None:
     await import_seed_rules_when_empty(target_repository, seed_path)
 
     assert await read_triples(target_repository) == await read_triples(source_repository)
+
+
+def test_codec_round_trips_rules() -> None:
+    codec = YamlKeywordRuleDocumentCodec()
+    rules = [
+        KeywordRule(
+            rule_id=KeywordRuleId(1),
+            name="カメラ",
+            query="フィルムカメラ",
+            is_enabled=True,
+            baseline_established_at=None,
+        ),
+        KeywordRule(
+            rule_id=KeywordRuleId(2),
+            name="second",
+            query="beta",
+            is_enabled=False,
+            baseline_established_at=None,
+        ),
+    ]
+
+    drafts = codec.decode_rule_drafts(codec.encode_rules(rules))
+
+    assert [(draft.name, draft.query, draft.is_enabled) for draft in drafts] == [
+        ("カメラ", "フィルムカメラ", True),
+        ("second", "beta", False),
+    ]
+
+
+def test_codec_rejects_malformed_document_as_invalid_domain_value() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        YamlKeywordRuleDocumentCodec().decode_rule_drafts("keywords: [unclosed\n")
