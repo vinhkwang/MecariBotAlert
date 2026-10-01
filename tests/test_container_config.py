@@ -8,15 +8,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_NAME = "alert-bot"
 
 
+def load_compose_file() -> dict[str, Any]:
+    compose: dict[str, Any] = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
+    return compose
+
+
 def load_compose_service() -> dict[str, Any]:
-    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
-    service: dict[str, Any] = compose["services"][SERVICE_NAME]
+    service: dict[str, Any] = load_compose_file()["services"][SERVICE_NAME]
     return service
 
 
 def load_compose_volumes() -> dict[str, Any]:
-    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
-    volumes: dict[str, Any] = compose["volumes"]
+    volumes: dict[str, Any] = load_compose_file()["volumes"]
     return volumes
 
 
