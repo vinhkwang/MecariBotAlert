@@ -131,7 +131,8 @@ def test_settings_are_immutable() -> None:
 def read_env_example_assignments() -> dict[str, str]:
     assignments: dict[str, str] = {}
     for line in ENV_EXAMPLE_PATH.read_text(encoding="utf-8").splitlines():
-        if line.strip():
+        line = line.removeprefix("# ")
+        if "=" in line:
             name, _, value = line.partition("=")
             assignments[name.strip()] = value.strip()
     return assignments
