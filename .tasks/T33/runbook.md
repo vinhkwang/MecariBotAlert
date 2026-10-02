@@ -10,7 +10,7 @@ On your machine:
 
 ```bash
 scp deploy/bootstrap.sh root@<vps-ip>:/tmp/
-ssh root@<vps-ip> 'bash /tmp/bootstrap.sh <user> "<your-ssh-public-key>"'
+ssh -t root@<vps-ip> 'bash /tmp/bootstrap.sh <user> "<your-ssh-public-key>"'
 ```
 
 Keep the root session open. In a second terminal:

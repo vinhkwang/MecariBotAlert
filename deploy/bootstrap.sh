@@ -29,6 +29,10 @@ if ! id -u "${USERNAME}" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "" "${USERNAME}"
 fi
 usermod -aG sudo "${USERNAME}"
+# Sudo needs a password; --disabled-password leaves none. Requires ssh -t.
+if passwd -S "${USERNAME}" | grep -qE '^\S+ (L|NP) '; then
+  passwd "${USERNAME}"
+fi
 install -d -m 700 -o "${USERNAME}" -g "${USERNAME}" "/home/${USERNAME}/.ssh"
 echo "${SSH_PUBLIC_KEY}" > "/home/${USERNAME}/.ssh/authorized_keys"
 chmod 600 "/home/${USERNAME}/.ssh/authorized_keys"
