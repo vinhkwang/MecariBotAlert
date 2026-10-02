@@ -83,3 +83,10 @@ def test_dockerignore_excludes_secrets_and_local_state() -> None:
 
     for required_entry in (".env", ".git", ".venv", "data/"):
         assert required_entry in ignored_entries
+
+
+def test_env_example_does_not_blank_image_environment() -> None:
+    env_example_lines = (PROJECT_ROOT / ".env.example").read_text().splitlines()
+    env_example_keys = {line.split("=", 1)[0] for line in env_example_lines if "=" in line}
+
+    assert not env_example_keys & load_image_environment().keys()
