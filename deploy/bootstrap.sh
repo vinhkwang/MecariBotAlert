@@ -35,7 +35,8 @@ chmod 600 "/home/${USERNAME}/.ssh/authorized_keys"
 chown "${USERNAME}:${USERNAME}" "/home/${USERNAME}/.ssh/authorized_keys"
 
 echo "==> SSH hardening"
-cat > /etc/ssh/sshd_config.d/99-hardening.conf <<SSHCONF
+# sshd keeps the first value it reads; 00- loads before provider files like 50-cloud-init.conf.
+cat > /etc/ssh/sshd_config.d/00-hardening.conf <<SSHCONF
 Port ${SSH_PORT}
 PermitRootLogin no
 PasswordAuthentication no
