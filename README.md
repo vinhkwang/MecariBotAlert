@@ -9,16 +9,10 @@ Không đăng nhập. Không tài khoản Mercari. Không mua tự động.
 
 ## Đọc theo thứ tự
 
-| File | Nội dung |
-|---|---|
-| `CLAUDE.md` | Hiến pháp của repo. Mọi agent đọc trước khi chạm code. |
-| `docs/TASKS.md` | Task board. 34 task, wave nào chạy song song được. |
-| `docs/WORKFLOW.md` | Vòng lặp một task, chạy song song, giao thức merge. |
-| `docs/SPIKE.md` | Cổng chặn. Điền xong mới được code. |
-| `docs/UI.md` | Đặc tả UI và JSON API. |
-| `docs/VPS.md` | Cấu hình VPS, chọn nhà cung cấp, hardening. |
-| `docs/PLAN.md` | Đánh giá khả thi, estimate, chi phí. |
-| `OPERATOR.md` | Hướng dẫn vận hành cho người không phải dev. |
+> Tài liệu kế hoạch, quy trình và hướng dẫn agent được giữ ở local, không
+> commit vào repo này.
+
+Hướng dẫn vận hành cho người không phải dev: `OPERATOR.md`.
 
 ## Keyword
 
