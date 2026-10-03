@@ -105,6 +105,7 @@ def test_quiet_hours_cross_midnight_in_recipient_timezone() -> None:
 
     assert recipient.is_quiet_at(datetime(2026, 1, 15, 3, 0, tzinfo=UTC))
     assert not recipient.is_quiet_at(datetime(2026, 1, 15, 12, 0, tzinfo=UTC))
+    assert recipient.is_quiet_at(datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
 
 
 def test_is_quiet_at_rejects_naive_moment() -> None:
