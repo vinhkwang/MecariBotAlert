@@ -161,10 +161,10 @@ chạy thì lệnh này mới hoạt động.
 crontab -e
 ```
 
-thêm dòng (thay `<user>` và đường dẫn cho đúng):
+thêm dòng (sửa đường dẫn nếu bot không nằm ở `~/mercari-alert-bot`):
 
 ```
-0 3 * * * /home/<user>/mercari-alert-bot/deploy/backup.sh >> /home/<user>/mab-backup.log 2>&1
+0 3 * * * $HOME/mercari-alert-bot/deploy/backup.sh >> $HOME/mab-backup.log 2>&1
 ```
 
 Đừng sao lưu bằng cách copy thẳng file database khi bot đang chạy, bản sao có
