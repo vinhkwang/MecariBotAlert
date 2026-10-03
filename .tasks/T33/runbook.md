@@ -81,7 +81,7 @@ cd ~/mercari-alert-bot
 ./deploy/backup.sh
 ls -l backups/
 gunzip -c backups/listings-*.db.gz | python3 -c "import sqlite3,sys,tempfile,os; d=sys.stdin.buffer.read(); p=tempfile.mktemp(); open(p,'wb').write(d); print(sqlite3.connect(p).execute('pragma integrity_check').fetchone()[0]); os.remove(p)"
-(crontab -l 2>/dev/null; echo '0 3 * * * /home/<user>/mercari-alert-bot/deploy/backup.sh >> /home/<user>/mab-backup.log 2>&1') | crontab -
+(crontab -l 2>/dev/null; echo '0 3 * * * $HOME/mercari-alert-bot/deploy/backup.sh >> $HOME/mab-backup.log 2>&1') | crontab -
 crontab -l
 ```
 
@@ -90,7 +90,7 @@ Pass: archive non-empty, integrity check prints `ok`, cron line listed.
 ## R7 soak sampler
 
 ```bash
-(crontab -l; echo '0 * * * * (date -u +\%FT\%TZ; free -m; df -h /; docker stats --no-stream; docker compose -f /home/<user>/mercari-alert-bot/docker-compose.yml logs --since 1h | grep -ci error) >> /home/<user>/mab-soak.log 2>&1') | crontab -
+(crontab -l; echo '0 * * * * (date -u +\%FT\%TZ; free -m; df -h /; docker stats --no-stream; docker compose -f $HOME/mercari-alert-bot/docker-compose.yml logs --since 1h | grep -ci error) >> $HOME/mab-soak.log 2>&1') | crontab -
 crontab -l
 ```
 
